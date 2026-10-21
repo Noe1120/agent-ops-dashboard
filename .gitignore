@@ -1,0 +1,30 @@
+# 依赖
+node_modules/
+
+# 日志 / 临时文件
+*.log
+*.tmp
+.env
+
+# 本地截图（README 只用 docs/screenshot-*.png）
+docs/preview-*.png
+
+# 内部开发笔记 / 发布说明（不进公开仓库）
+HANDOFF.md
+NEXT-PLAN.md
+SNAPSHOT.md
+MANIFEST.sha256
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本机发布脚本（含本机绝对路径，不进公开仓库）
+更新稳定版.cmd
+
+# 社交预览图（GitHub 设置里上传，不属于仓库）
+social-preview-*.png
+
+# 会话中断时的状态说明（内部）
+NEXT-TASKS.md
