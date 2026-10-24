@@ -1,0 +1,2995 @@
+<!doctype html><html lang="zh-CN"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="icon" href="data:,"></head><body>
+<title>Agent Ops 调度大屏</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* Layout: 纸面工程图式大屏 —— 顶部指标轨 + 圆心偏左的大弧舞台（静止的汇聚连线 / 快速旋转的飞轮：环带数据块 + 外射谱线）+ 底部 2×4 仪表面板。浅色 = 纸与墨，深色 = 夜间荧光绿 */
+:root{
+  --bg:#eeede8; --panel:#f6f5f1; --band:#eeede8;
+  --ink:#151515; --ink2:#4a4a46; --mute:#86857f; --hair:#d2d0c9; --hair2:#e4e2dc;
+  --accent:#151515; --bar:#151515; --chip-fg:#f6f5f1; --scan:transparent;
+  --c-line:#151515; --c-hi:#000000; --c-hot:#000000; --c-text:#1a1a1a; --c-dim:#7d7c77;
+  /* 粒子按动作上色：读取 / 生成 / 核验 / 复核 */
+  --v-read:#151515; --v-build:#1f5f7a; --v-check:#7a5a10; --v-review:#7a2530;
+  --font:"JetBrains Mono","Noto Sans SC",ui-monospace,Menlo,monospace;
+  --cjk:"Noto Sans SC","JetBrains Mono",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#030605; --panel:#06100c; --band:#040a08;
+  --ink:#c3f8e2; --ink2:#5fd6a6; --mute:#4c9f7f; --hair:#143327; --hair2:#0c1f17;
+  --accent:#7dffd0; --bar:#5fd6a6; --chip-fg:#03100b; --scan:rgba(125,255,208,.022);
+  --c-line:#34d996; --c-hi:#e6fff4; --c-hot:#3dffa6; --c-text:#a6efcf; --c-dim:#3d8f6f;
+  --v-read:#34d996; --v-build:#7fb2ff; --v-check:#ffc857; --v-review:#ff8ad4;
+  color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#030605; --panel:#06100c; --band:#040a08;
+  --ink:#c3f8e2; --ink2:#5fd6a6; --mute:#4c9f7f; --hair:#143327; --hair2:#0c1f17;
+  --accent:#7dffd0; --bar:#5fd6a6; --chip-fg:#03100b; --scan:rgba(125,255,208,.022);
+  --c-line:#34d996; --c-hi:#e6fff4; --c-hot:#3dffa6; --c-text:#a6efcf; --c-dim:#3d8f6f;
+  --v-read:#34d996; --v-build:#7fb2ff; --v-check:#ffc857; --v-review:#ff8ad4;
+  color-scheme:dark }
+
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:11px;-webkit-font-smoothing:antialiased}
+.app{position:relative;min-height:100%;box-sizing:border-box;display:grid;grid-template-rows:minmax(440px,1fr) auto;gap:10px;padding-block:14px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* 顶部指标轨 */
+.top{position:absolute;z-index:3;left:0;top:0;display:grid;grid-template-columns:repeat(3,minmax(86px,auto));gap:12px 26px;align-items:end;padding:14px 48px 34px 16px;pointer-events:none;text-shadow:0 0 2px var(--bg),0 0 6px var(--bg),0 0 12px var(--bg);background:radial-gradient(farthest-side at 0 0,color-mix(in srgb,var(--bg) 82%,transparent),color-mix(in srgb,var(--bg) 45%,transparent) 62%,transparent)}
+.top .title{grid-column:1 / -1}
+.cell{position:relative;min-width:0;padding-bottom:7px;border-bottom:1px solid var(--hair)}
+.stat{min-width:86px}
+.cell::after{content:"";position:absolute;left:0;bottom:-1px;height:3px;width:0;background:var(--accent);transition:width .9s ease}
+.cell.on::after{width:100%}
+.title::after{width:100%;height:2px;background:var(--ink)}
+.title h1{margin:0;font-weight:800;font-size:clamp(16px,1.5vw,23px);letter-spacing:.02em;line-height:1.1;white-space:nowrap}
+.title h1 .zh{font-family:var(--cjk);font-weight:700;letter-spacing:.04em}
+.title p{margin:5px 0 0;font-size:8.5px;letter-spacing:.14em;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title p b{color:var(--ink2);font-weight:500;font-variant-numeric:tabular-nums}
+.stat .k{display:block;font-size:8px;letter-spacing:.16em;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .k i{font-style:normal;font-family:var(--cjk);letter-spacing:.04em;margin-left:5px}
+.stat .v{display:block;margin-top:6px;font-size:clamp(13px,1.05vw,16px);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{color:var(--mute);font-size:.78em}
+.ctls{position:absolute;z-index:4;top:14px;right:14px;display:flex;gap:6px}
+.btn{font:inherit;font-size:10px;letter-spacing:.1em;color:var(--ink);background:transparent;border:1px solid var(--mute);padding:5px 10px;cursor:pointer;white-space:nowrap;font-family:var(--cjk)}
+.btn:hover{border-color:var(--ink)}
+.ctls select{font:inherit;font-size:10px;letter-spacing:.06em;color:var(--ink);background:transparent;border:1px solid var(--mute);padding:5px 6px;cursor:pointer;font-family:var(--cjk);max-width:190px}
+.ctls select:hover{border-color:var(--ink)}
+.ctls select:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+.btn:focus-visible,.seg button:focus-visible,#pc:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+/* S07：飞轮在窄屏是可折叠的次要区域 */
+.stagebtn{display:none}
+
+/* 舞台 */
+.stage{position:relative;min-height:0;overflow:hidden;background:var(--bg)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom,var(--scan) 0 1px,transparent 1px 3px)}
+.note{position:absolute;z-index:2;right:14px;bottom:14px;display:grid;gap:4px;min-width:220px;border-left:2px solid var(--ink);padding:4px 4px 4px 12px;pointer-events:none;text-shadow:0 0 2px var(--bg),0 0 6px var(--bg),0 0 12px var(--bg)}
+.note .nh{font-size:8px;letter-spacing:.14em;color:var(--mute);border-bottom:1px solid var(--hair);padding-bottom:5px;white-space:nowrap}
+.note b{font-size:12.5px;font-weight:500;letter-spacing:.02em;font-variant-numeric:tabular-nums;font-family:var(--font);white-space:nowrap}
+.note .ns{font-size:9px;color:var(--mute);font-family:var(--cjk)}
+.note .nh i{font-style:normal;font-size:9px;letter-spacing:0;color:var(--mute);margin-left:6px;font-family:var(--cjk)}
+/* S06：需要处理的对象固定在状态区顶部，比活动动画更先被看到 */
+.note .attention{display:block;font-family:var(--cjk);font-size:9.5px;line-height:1.35;padding:2px 0 5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.note .attention[data-state="warn"]{color:var(--v-check);font-weight:700}
+/* S06：大字模式放大名称/状态/错误/时间（行高不变，避免破坏任务流锚点计算） */
+body[data-bigtext="1"] .note .wfs li{font-size:11.5px}
+body[data-bigtext="1"] .note .attention{font-size:11px}
+body[data-bigtext="1"] .feed li{font-size:11px}
+body[data-bigtext="1"] .agents li{font-size:11.5px}
+body[data-bigtext="1"] .title h1{font-size:clamp(20px,1.9vw,30px)}
+body[data-bigtext="1"] .title p{font-size:10px}
+.note .wfs{list-style:none;margin:0;padding:0 2px 0 0;display:grid;gap:3px;max-height:150px;overflow-y:auto;scrollbar-width:thin}
+.note .wfs li{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;gap:6px;align-items:baseline;font-size:9.5px;font-family:var(--cjk);line-height:1.35}
+.note .wfs .wid{color:var(--mute);font-family:var(--font);letter-spacing:.06em}
+.note .wfs .wname{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:104px}
+.note .wfs .wst{font-variant-numeric:tabular-nums;white-space:nowrap}
+.note .wfs li.busy .wst{color:var(--ink)}
+.note .wfs li.busy .wst b{color:var(--accent-ink,var(--ink))}
+.note .wfs li.fail .wst{color:var(--v-check)}
+.note .wfs li.stall .wst{color:var(--mute)}
+.note .wfs li.idle .wst{color:var(--hair)}
+.note .wfs .failmsg{grid-column:2 / 5;font-size:8.5px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hud{position:absolute;z-index:2;right:14px;bottom:96px;display:grid;gap:3px;border-left:2px solid var(--ink);padding:3px 4px 3px 12px;font-size:8.5px;letter-spacing:.1em;color:var(--mute);white-space:nowrap;pointer-events:none;text-shadow:0 0 2px var(--bg),0 0 6px var(--bg),0 0 12px var(--bg)}
+.hud b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+.hud .warn{color:var(--accent);font-weight:700}
+.title p b#mode{color:var(--ink);font-weight:700;letter-spacing:.08em}
+.title p b#mode.live::before{content:"\25CF ";color:var(--c-hot)}
+.title p b#mode.off{color:var(--mute);font-weight:500}
+.title p b#mode.off::before{content:"\25CB ";color:var(--mute)}
+.tip{position:absolute;z-index:3;pointer-events:none;background:var(--panel);border:1px solid var(--ink);padding:6px 9px;font-size:10.5px;line-height:1.55;font-family:var(--cjk);max-width:250px}
+.tip b{font-family:var(--font);font-weight:700;margin-right:6px}
+.tip span{display:block;color:var(--mute);font-family:var(--font);font-size:9px}
+/* S03：详情侧栏 + 列表里的详情按钮（键盘/触控可达，不只依赖 Canvas/hover） */
+.detail{position:fixed;z-index:8;right:14px;top:64px;width:min(380px,calc(100vw - 28px));max-height:calc(100vh - 96px);overflow:auto;background:var(--panel);border:1px solid var(--ink);padding:12px 14px;font-family:var(--cjk);box-shadow:4px 4px 0 var(--hair)}
+.detail[hidden]{display:none}
+.detail .dh{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--hair);padding-bottom:8px;margin-bottom:8px}
+.detail .dh h2{margin:0;font-size:12px;letter-spacing:.06em}
+.detail .df{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;font-size:10.5px;line-height:1.55}
+.detail .df dt{color:var(--mute);white-space:nowrap}
+.detail .df dd{margin:0;color:var(--ink);word-break:break-all;white-space:pre-wrap}
+.detail .dacts{display:flex;gap:8px;align-items:center;margin-top:10px}
+.detail .dmsg{font-size:9px;color:var(--mute)}
+.detail .dhint{margin:8px 0 0;font-size:8.5px;color:var(--mute)}
+.detailbtn{font:inherit;font-size:8px;letter-spacing:.04em;padding:1px 5px;border:1px solid var(--hair);background:transparent;color:var(--mute);cursor:pointer;font-family:var(--cjk);white-space:nowrap}
+.detailbtn:hover,.detailbtn:focus-visible{border-color:var(--ink);color:var(--ink);outline:1px solid var(--accent);outline-offset:1px}
+@media (max-width:640px){.detail{left:10px;right:10px;top:auto;bottom:10px;width:auto;max-height:60vh}}
+
+/* 面板 */
+.panels{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.panel{min-width:0;height:184px;box-sizing:border-box;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--hair);padding:9px 11px 8px}
+.ph{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px;min-width:0}
+.ph h2{margin:0;font-size:9px;font-weight:800;letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 0 auto}
+.ph h2 i{font-style:normal;font-family:var(--cjk);font-weight:500;color:var(--mute);letter-spacing:.06em;margin-left:6px}
+.ph span{font-size:8.5px;color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.pb{flex:1;min-height:0;position:relative;overflow:hidden}
+.pb canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.pf{margin-top:6px;font-size:8px;letter-spacing:.1em;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pf b{color:var(--ink);font-weight:500}
+
+.feed{list-style:none;margin:0;padding:0;height:100%;font-size:9.5px;line-height:13.5px}
+.feed li{display:grid;grid-template-columns:2.4em 3.4em minmax(0,1fr);gap:8px;white-space:nowrap}
+.feed .n{color:var(--mute);font-variant-numeric:tabular-nums}
+.feed .vb{color:var(--ink2)}
+.feed .d{overflow:hidden;text-overflow:ellipsis;font-family:var(--cjk)}
+.feed li:last-child{font-weight:700}
+.feed li:last-child .d{font-weight:700}
+/* 任务流可滚动：鼠标滚轮往上翻历史，翻走了就不跟底，点「↓ 最新」回来 */
+#feedPanel{position:relative}
+#feedBox{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--hair) transparent}
+#feedBox::-webkit-scrollbar{width:5px}
+#feedBox::-webkit-scrollbar-thumb{background:var(--hair)}
+#feedBox::-webkit-scrollbar-thumb:hover{background:var(--mute)}
+#feedBox::-webkit-scrollbar-track{background:transparent}
+#feedBox .feed{height:auto;min-height:100%;padding-right:4px}
+.jump{position:absolute;right:9px;bottom:7px;z-index:2;font:inherit;font-size:8px;letter-spacing:.08em;padding:3px 7px;border:1px solid var(--ink);background:var(--panel);color:var(--ink);cursor:pointer;font-family:var(--cjk)}
+.jump:hover{background:var(--ink);color:var(--chip-fg)}
+/* 任务流筛选：失败 / 来源 / 智能体，降低长历史的查找成本 */
+.feedfilters{display:flex;gap:5px;align-items:center;margin:0 0 6px;min-width:0}
+.feedfilters .fbtn{font:inherit;font-size:8px;letter-spacing:.06em;padding:2px 6px;border:1px solid var(--hair);background:transparent;color:var(--ink2);cursor:pointer;font-family:var(--cjk);white-space:nowrap}
+.feedfilters .fbtn.on,.feedfilters .fbtn[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--hair2)}
+.feedfilters select{font:inherit;font-size:8px;color:var(--mute);background:transparent;border:1px solid var(--hair);padding:2px 3px;max-width:106px;min-width:0;font-family:var(--cjk)}
+.feedfilters select:focus-visible,.feedfilters .fbtn:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.feed .gapnote{display:block;white-space:normal;line-height:12px;color:var(--v-check);font-family:var(--cjk);padding:2px 0}
+.feed .gapnote.evicted{color:var(--v-review)}
+/* 任务流按会话分组：换会话时插一条细分隔头 */
+.feed .grp{display:block;margin:2px 0 1px;padding-top:2px;border-top:1px solid var(--hair);font-size:7.5px;letter-spacing:.1em;color:var(--mute);line-height:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feed .grp b{color:var(--ink);font-weight:700;margin-right:5px;letter-spacing:.06em}
+.feed li.msg .d{font-weight:700}
+.feed li.msg .vb{color:var(--ink)}
+/* 新会话登场 */
+.agents li.pop{animation:pop 1.1s ease-in-out 2}
+@keyframes pop{50%{transform:scale(1.1);filter:brightness(1.3)}}
+.stage.zoom{animation:zstage .55s ease}
+@keyframes zstage{50%{transform:scale(1.025)}}
+/* 假数据要一眼认出来，别让人以为是真的；内置演示和联网的 mock 后端都算演示数据 */
+body[data-demo="1"] .stage::before{content:"演示数据 · 非真实数据源";position:absolute;z-index:5;left:50%;top:12%;transform:translateX(-50%) rotate(-5deg);font:800 30px/1 var(--cjk);letter-spacing:.22em;color:var(--mute);opacity:.18;pointer-events:none;white-space:nowrap}
+#mode.off,#mode.demo{border:1px solid var(--mute);padding:0 4px}
+#mode.live{color:var(--v-read)}
+#mode.demo{color:var(--v-check)}
+#mode.off{color:var(--v-review)}
+#mode.ev{color:var(--v-check)}
+.rtag{font-size:9px;padding:0 5px;border:1px solid var(--v-check);color:var(--v-check);letter-spacing:.08em;margin-left:4px}
+.rtag.pause{border-color:var(--v-review);color:var(--v-review)}
+.rtag.scan{border-color:var(--mute);color:var(--mute);letter-spacing:.04em}
+.rtag.scan.warn{border-color:var(--v-check);color:var(--v-check);font-weight:700}
+.rtag.motion{border-color:var(--hair);color:var(--mute)}
+.feed li.fail{grid-template-columns:2.4em 4.4em minmax(0,1fr)}
+.feed li.fail .vb{color:var(--v-review);font-weight:700}
+.feed li.fail .d{color:var(--v-review)}
+
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:7px}
+.seg button{font:inherit;font-size:8px;letter-spacing:.14em;padding:4px 0;border:1px solid var(--hair);background:transparent;color:var(--ink2);cursor:pointer}
+.seg button:hover{border-color:var(--ink)}
+.seg button.on{background:var(--ink);border-color:var(--ink);color:var(--chip-fg)}
+#pc{cursor:crosshair}
+
+.code{margin:0;height:100%;font-size:9.5px;line-height:13px;overflow:hidden}
+.code .row{display:block;white-space:pre}
+.code .row.cur{background:var(--hair2)}
+.code .ln{color:var(--mute);margin-right:12px;user-select:none}
+.code .kw{font-weight:800}
+.code .str{color:var(--ink2)}
+.code .cm{color:var(--mute)}
+.caret{display:inline-block;width:.6em;height:11px;vertical-align:-2px;background:var(--ink);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+.agents{list-style:none;margin:0;padding:0;height:100%;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(6,minmax(16px,1fr));grid-auto-flow:column;column-gap:16px;overflow-y:auto;align-content:start;scrollbar-width:thin}
+.agents li{display:grid;grid-template-columns:1.7em 5em minmax(0,1fr) auto;gap:6px;align-items:center;font-size:9.5px;min-width:0;min-height:16px}
+.agents .n{color:var(--mute);font-variant-numeric:tabular-nums}
+.agents .r{font-family:var(--cjk);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agents li.idle .r{color:var(--mute)}
+.agents .b{display:grid;gap:2px;min-width:0}
+.agents .b b{display:block;height:5px;background:var(--hair2);position:relative;overflow:hidden}
+.agents .b b i{position:absolute;left:0;top:0;bottom:0;background:var(--bar);transition:width .6s ease}
+.agents .b small{font-size:7.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.04em}
+/* 阶段型任务没有真实百分比：用移动的不定进度条，不画成「已完成 xx%」；
+   用户暂停时用 CSS 冻结动画（与数据冻结保持一致），恢复后继续。 */
+.agents .b b i.ind{width:30%;animation:indet 1.7s ease-in-out infinite alternate}
+body[data-paused="1"] .agents .b b i.ind{animation-play-state:paused}
+@keyframes indet{from{transform:translateX(-110%)}to{transform:translateX(350%)}}
+
+@media (max-width:1100px){
+  .panels{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .app{grid-template-rows:auto auto}
+  .top{right:0;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 14px;padding:10px 10px 18px}
+  .top .title{box-sizing:border-box;padding-right:118px}
+  .stat{min-width:0}
+  .ctls{right:10px;top:10px}
+  .stage{height:150vw;max-height:720px}
+  .note{right:10px;bottom:10px;min-width:0;max-width:calc(100% - 20px);box-sizing:border-box}
+  .hud{display:none}
+  .panels{grid-template-columns:minmax(0,1fr)}
+  /* 窄屏：列表优先（面板在飞轮之前），飞轮作为次要区域可折叠；字号不缩小 */
+  .stagebtn{display:inline-block}
+  .app{display:flex;flex-direction:column;gap:6px;padding-block:8px}
+  .panels{order:1}
+  .stage{order:2}
+  /* 页头/控制进入文档流，避免绝对定位盖住第一块面板 */
+  .top{position:static;padding:8px 10px 6px;background:none}
+  .top .title{padding-right:0}
+  .ctls{position:static;margin:0 10px 8px;justify-content:flex-start;flex-wrap:wrap;max-width:none}
+  .title h1{font-size:15px}
+  #feedPanel{order:1}
+  #agentPanel{order:2}
+  #particlePanel{order:3}
+  #codePanel{order:4}
+  .feed li,.agents li{font-size:11px}
+  body[data-stage="off"] .stage{display:none}
+  body[data-stage="off"] .app{display:flex}
+}
+@media (max-width:420px){
+  .top{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (prefers-reduced-motion:reduce){.cell::after{transition:none}.caret{animation:none}.agents li.pop,.stage.zoom{animation:none}.agents .b b i.ind{animation:none;width:65%}}
+
+/* ---- file:// 打开时的提示层：这时浏览器禁止 fetch，看不到真实数据 ---- */
+.filehint{position:fixed;inset:0;z-index:99;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--ink);font-family:var(--cjk)}
+.filehint[hidden]{display:none!important}
+.filehint .card{max-width:600px;box-sizing:border-box;border:1px solid var(--ink);background:var(--panel);padding:26px 30px;box-shadow:6px 6px 0 var(--hair)}
+.filehint h2{margin:0 0 16px;font-size:15px;letter-spacing:.05em;font-weight:800}
+.filehint p{margin:0 0 11px;font-size:12px;line-height:1.8;color:var(--ink2)}
+.filehint b{color:var(--ink);font-weight:700}
+.filehint kbd{display:inline-block;padding:1px 6px;border:1px solid var(--ink);background:var(--band);color:var(--ink);font-family:var(--font);font-size:11px;font-weight:700}
+.filehint pre{margin:10px 0 14px;padding:10px 13px;border:1px solid var(--hair);background:var(--band);color:var(--ink);font-family:var(--font);font-size:12px;line-height:1.75;white-space:pre-wrap;overflow:auto}
+.filehint .state{font-size:12px;color:var(--mute);margin:14px 0 8px;min-height:1.4em}
+.filehint .state.ok{color:var(--ink);font-weight:700}
+.filehint a.go{display:inline-block;padding:8px 16px;border:1px solid var(--ink);background:var(--ink);color:var(--chip-fg);text-decoration:none;font-size:12px;letter-spacing:.06em}
+.filehint .foot{margin-top:16px;font-size:10.5px;line-height:1.7;color:var(--mute)}
+/* 页面上标出"当前这份是从哪个文件夹起的" */
+.title p .src{margin-left:6px;padding:0 4px;border:1px solid var(--hair);color:var(--mute);font-weight:500;letter-spacing:.06em}
+.title p .src:empty{display:none}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="cell title">
+      <h1>AGENT OPS / <span class="zh">调度中心</span></h1>
+      <p>TASKS → AGENTS → OUTPUTS · <b id="mode">示例数据</b> <span id="pauseTag" class="rtag pause" hidden>暂停中 · 数据冻结</span> <span id="replayTag" class="rtag" hidden>回放中</span> <span id="scanTag" class="rtag scan" hidden></span> <span id="motionTag" class="rtag motion" hidden>减少动效 · 数据仍实时</span> · <b id="clock">--</b> <span id="servedTag" class="src"></span></p>
+    </div>
+    <div class="cell stat"><span class="k" title="当前上屏的任务记录：工具调用与待办，不是交付物数量">TASKS<i>任务记录</i></span><span class="v" id="s0">64</span></div>
+    <div class="cell stat"><span class="k">AGENTS<i>智能体</i></span><span class="v" id="s1">12</span></div>
+    <div class="cell stat"><span class="k">WORKFLOWS<i>工作流</i></span><span class="v" id="s2">11</span></div>
+    <div class="cell stat"><span class="k" title="已完成：已成功结束的任务记录（工具调用与待办），不是文件产出数">DONE<i>已完成</i></span><span class="v" id="s3">0</span></div>
+    <div class="cell stat"><span class="k" title="工具调用成功率 ≥ 阈值的工作区数（左：达标数 / 右：上屏工作区总数；无样本单列）">RATE OK<i>达标</i></span><span class="v" id="s4">0</span></div>
+    <div class="cell stat"><span class="k" title="有调用样本但成功率低于阈值的工作区数（无样本不计入这一格）">RATE LOW<i>低于阈值</i></span><span class="v" id="s5">0</span></div>
+  </header>
+  <div class="ctls">
+    <select id="srcSel" aria-label="数据源" title="切换数据源"></select>
+    <button class="btn stagebtn" id="stageToggle" type="button" aria-pressed="false">收起飞轮</button>
+    <button class="btn" id="bigText" type="button" aria-pressed="false">大字</button>
+    <button class="btn" id="theme" type="button">夜间</button>
+    <button class="btn" id="pause" type="button" aria-pressed="false">暂停</button>
+  </div>
+  <main class="stage" id="stage">
+    <canvas id="sc" aria-label="调度主视图：左侧连线汇聚到工作区节点，中间旋转环带滚动执行记录，右侧旋转谱线表示输出流"></canvas>
+    <div class="hud"><span>STABILITY CHECK · 稳定性</span><span>CFL = |u|·Δt/Δx = <b id="cfl">0.00</b> <span id="cflst">OK</span></span></div>
+    <div class="note" id="note">
+      <span class="nh">WORKFLOW / REVIEW STATE<i>工作区状态</i></span>
+      <span class="attention" id="attention" data-state="ok">暂无异常</span>
+      <ul class="wfs" id="wfStatus"></ul>
+      <span class="ns" id="noteMain">— / 11 达标 · 11 低于阈值</span>
+    </div>
+    <div class="tip" id="tip" hidden></div>
+  </main>
+
+  <section class="panels">
+    <article class="panel" id="feedPanel">
+      <div class="ph"><h2>TASK FEED<i>任务流</i></h2><span id="feedMeta">64 tasks</span></div>
+      <div class="feedfilters" role="group" aria-label="任务流筛选">
+        <button class="fbtn" id="feedFail" type="button" aria-pressed="false">仅失败</button>
+        <select id="feedSrc" aria-label="按来源筛选">
+          <option value="">全部来源</option><option value="dsh">DSH</option>
+          <option value="codex">Codex</option><option value="claude">Claude</option>
+        </select>
+        <select id="feedAgent" aria-label="按智能体筛选"><option value="">全部智能体</option></select>
+      </div>
+      <div class="pb" id="feedBox"><ol class="feed" id="feed"></ol></div>
+      <button class="jump" id="feedJump" type="button" hidden>↓ 最新</button>
+    </article>
+    <article class="panel" id="particlePanel">
+      <div class="ph"><h2>ADVECTION / PARTICLE SOLVER<i>粒子求解</i></h2><span id="stepN">事件粒子</span></div>
+      <div class="pb" id="pcBox"><canvas id="pc" tabindex="0" aria-label="粒子流场，点击加入涡流"></canvas></div>
+      <div class="seg" role="group" aria-label="求解模式">
+        <button type="button" data-m="advect" class="on">ADVECT</button>
+        <button type="button" data-m="project">PROJECT</button>
+        <button type="button" data-m="rerun">RERUN</button>
+      </div>
+    </article>
+    <article class="panel" id="codePanel">
+      <div class="ph"><h2>WORKSPACE<i>执行代码</i></h2><span id="codeMeta">python</span></div>
+      <div class="pb"><pre class="code" id="code"></pre></div>
+    </article>
+    <article class="panel" id="agentPanel">
+      <div class="ph"><h2><span id="agTitle">12 AGENTS</span> / DISPATCH<i>调度</i></h2><span id="agMeta">0 idle</span></div>
+      <div class="pb"><ul class="agents" id="agents"></ul></div>
+      <div class="pf">independent jobs / shared event bus</div>
+    </article>
+  </section>
+</div>
+
+<!-- S03：可停留的详情侧栏（工作区/智能体共用）。打开时显示完整字段与复制操作，Esc 关闭。 -->
+<aside class="detail" id="detail" role="dialog" aria-modal="false" aria-labelledby="detailTitle" hidden>
+  <div class="dh"><h2 id="detailTitle">详情</h2>
+    <button class="btn" id="detailClose" type="button" aria-label="关闭详情">关闭</button></div>
+  <dl class="df" id="detailBody"></dl>
+  <div class="dacts"><button class="btn" id="detailCopy" type="button">复制</button>
+    <span class="dmsg" id="detailMsg" aria-live="polite"></span></div>
+  <p class="dhint">Esc 关闭 · 关闭后焦点返回触发按钮</p>
+</aside>
+
+<!-- file:// 打开时盖住整屏：不显示演示数据，只给明确指引（不做跨域探测） -->
+<div class="filehint" id="fileHint" hidden>
+  <div class="card">
+    <h2>需要通过本地服务打开</h2>
+    <p>你现在是<b>直接双击 index.html</b> 打开的（<kbd>file://</kbd>）。浏览器禁止这种页面读取本地数据，
+       所以这里看不到真实内容——之前看到的那些数字是内置的演示数据。</p>
+    <p>正确做法：回到文件夹，<b>双击 <kbd>start.cmd</kbd></b>。它会启动服务并自动打开浏览器。</p>
+    <p>或者手动执行：</p>
+<pre>node dsh-bridge.mjs
+浏览器访问 http://127.0.0.1:8778</pre>
+    <p class="state" id="fileHintState">服务启动后，点下面的按钮打开实时大屏。</p>
+    <a class="go" id="fileHintGo" href="http://127.0.0.1:8778/">打开实时大屏</a>
+    <p class="foot">这个提示只在 <kbd>file://</kbd> 下出现。用 <kbd>http://</kbd> 打开会直接进入大屏，不会看到它。<br>
+       如果你改过端口（PORT=…），把上面的地址换成对应端口。</p>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= 1. 数据配置（换成你自己的内容即可） ================= */
+const CONFIG = {
+  matchThreshold: 0.8,   // 工具调用成功率 ≥ 该值算「达标」；渲染里原本散落的 0.8 统一收在这里
+  pollMs: 1000,          // 接真实数据后的轮询间隔（毫秒）
+  agents: [['01','检索'],['02','拆解'],['03','文案'],['04','设计'],['05','代码'],['06','测试'],
+           ['07','审校'],['08','数据'],['09','剪辑'],['10','投放'],['11','客服'],['12','归档']],
+  taskNames: ['竞品资料检索','需求拆解','短视频脚本','封面图六版','落地页改版','接口联调','合同条款审校','周报数据汇总',
+              '投标文件生成','私域话术更新','素材归档','发版检查','用户反馈聚类','广告素材测试','知识库更新','直播切片'],
+  workflows: ['资料检索','需求拆解','脚本生成','视觉设计','代码实现','测试验证','合规审校','数据汇总','视频剪辑','投放优化','知识归档'],
+  // 执行代码面板：多套示例，随机轮换，一轮内不重复。agent = 对应 agents 的序号（0 起）
+  codeSets: [
+    {file: 'dispatch.py', agent: 1, start: 7, lines: [
+      "# 每日调度：拆任务、派给智能体",
+      "tasks = load_queue('今日')",
+      "plan = split(tasks, by='skill')",
+      "for step in plan:",
+      "    agent = dispatch(step.skill)",
+      "    out = agent.run(step)",
+      "    if review(out) < 0.8:",
+      "        out = agent.revise(out)",
+      "    board.attach(step.id, out)"]},
+    {file: 'retrieve.py', agent: 0, start: 18, lines: [
+      "# 竞品资料检索",
+      "def retrieve(topic, k=20):",
+      "    hits = search.web(topic, top=k)",
+      "    docs = [fetch(h.url) for h in hits]",
+      "    docs = dedupe(docs, by='title')",
+      "    notes = summarize(docs, lang='zh')",
+      "    kb.save(topic, notes)",
+      "    return notes"]},
+    {file: 'script.py', agent: 2, start: 31, lines: [
+      "# 短视频脚本：钩子 + 正文 + 互动",
+      "def write_script(topic, pains):",
+      "    hook = pick_hook(pains, max_s=5)",
+      "    body = outline(topic, beats=4)",
+      "    cta = ask_for_comment(topic)",
+      "    draft = llm.write(hook, body, cta)",
+      "    return polish(draft, tone='口语')"]},
+    {file: 'cover.py', agent: 3, start: 42, lines: [
+      "# 封面图六版，挑最佳",
+      "specs = brief.cover_specs()",
+      "imgs = []",
+      "for i in range(6):",
+      "    imgs.append(img.gen(specs, seed=i))",
+      "scores = [rate(x, specs) for x in imgs]",
+      "best = imgs[argmax(scores)]",
+      "export(best, size='1080x1440')"]},
+    {file: 'tender.py', agent: 6, start: 56, lines: [
+      "# 投标文件：按甲方要求逐条响应",
+      "reqs = parse_tender('招标文件.pdf')",
+      "doc = Template('投标模板.docx')",
+      "for r in reqs:",
+      "    ans = draft_response(r, kb)",
+      "    doc.fill(r.id, ans)",
+      "missing = doc.check_required(reqs)",
+      "assert not missing, missing",
+      "doc.save('投标文件_v3.docx')"]},
+    {file: 'weekly.py', agent: 7, start: 64, lines: [
+      "# 周报数据汇总",
+      "rows = db.query('tasks', week=42)",
+      "done = [r for r in rows if r.done]",
+      "rate = len(done) / len(rows)",
+      "chart = plot.bar(group(done, 'agent'))",
+      "report.add('完成率', f'{rate:.0%}')",
+      "report.add_chart(chart)",
+      "report.send(to='周报群')"]},
+    {file: 'preflight.py', agent: 5, start: 77, lines: [
+      "# 发版前检查",
+      "def preflight(build):",
+      "    tests = run_tests(build, fast=True)",
+      "    if tests.failed:",
+      "        return block(tests.failed)",
+      "    diff = compare(build, last_release)",
+      "    if diff.risk > 0.3:",
+      "        return ask_review(diff)",
+      "    return approve(build)"]},
+    {file: 'ads_ab.py', agent: 9, start: 88, lines: [
+      "# 广告素材测试：小预算跑 AB",
+      "variants = load_creatives('第3批')",
+      "for v in variants:",
+      "    ads.launch(v, budget=200)",
+      "wait(hours=24)",
+      "stats = ads.report(variants)",
+      "win = max(stats, key=lambda s: s.ctr)",
+      "ads.scale(win, budget=2000)"]},
+    {file: 'archive.py', agent: 11, start: 95, lines: [
+      "# 素材归档与知识库更新",
+      "files = scan('素材/本周')",
+      "for f in files:",
+      "    tags = vision.tag(f)",
+      "    kb.index(f, tags=tags)",
+      "    move(f, to=f'归档/{tags[0]}')",
+      "log.info(f'归档 {len(files)} 个文件')"]}
+  ]
+};
+const CODEBITS = ['eqs = extract(spec.p)','solve(grid, dt=0.004)','log(claim, consts)','assert stable(state)','check_mass(state, ref)',
+  'flag(blind_spots)','drift = compare(out, ref)','rerun(scene_07)','cite(page=12)','metric = spec.metric()','state = step(inputs)',
+  'out = agent.run(step)','score = review(out)','board.attach(id, out)','route(task, skill)','queue.push(task)'];
+
+/* 飞轮转速（弧度/秒），越大转得越快 */
+const SPIN = 0.16;
+
+/* ================= 2. 工具 ================= */
+const $ = s => document.querySelector(s);
+const TAU = Math.PI * 2;
+const FONT = '"JetBrains Mono","Noto Sans SC",ui-monospace,Menlo,monospace';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const darkMQ = matchMedia('(prefers-color-scheme: dark)');
+const root = document.documentElement;
+function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const pick = (rr, a) => a[(rr() * a.length) | 0];
+const pad2 = n => String(n).padStart(2, '0');
+const hms = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+const wrapPI = a => ((a + Math.PI) % TAU + TAU) % TAU - Math.PI;
+const rgba = (hex, a) => { let h = hex.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+function fitCv(cv, ctx){ const r = cv.getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 2); const w = Math.max(1, r.width), h = Math.max(1, r.height); cv.width = Math.round(w * d); cv.height = Math.round(h * d); ctx.setTransform(d, 0, 0, d, 0, 0); return [w, h]; }
+function qd(c, q){ c.beginPath(); c.moveTo(q.x1, q.y1); c.quadraticCurveTo(q.cx, q.cy, q.x2, q.y2); c.stroke(); }
+function bez(q, u){ const v = 1 - u; return [v*v*q.x1 + 2*v*u*q.cx + u*u*q.x2, v*v*q.y1 + 2*v*u*q.cy + u*u*q.y2]; }
+
+/* 主题：颜色全部来自 CSS 变量 */
+let T = {};
+const isDark = () => root.dataset.theme ? root.dataset.theme === 'dark' : darkMQ.matches;
+function readTheme(){
+  const cs = getComputedStyle(root), g = n => cs.getPropertyValue(n).trim();
+  T = {dark: isDark(), bg: g('--bg'), panel: g('--panel'), band: g('--band'), ink: g('--ink'), ink2: g('--ink2'), mute: g('--mute'),
+       hair: g('--hair'), hair2: g('--hair2'), line: g('--c-line'), hi: g('--c-hi'), hot: g('--c-hot'), text: g('--c-text'), dim: g('--c-dim'),
+       v: [g('--v-read'), g('--v-build'), g('--v-check'), g('--v-review')]};   // 粒子按动作上色
+  T.cell = T.dark ? T.ink2 : T.ink;
+  themeBtn.textContent = T.dark ? '纸面' : '夜间';
+  themeBtn.setAttribute('aria-label', T.dark ? '切换到纸面主题' : '切换到夜间主题');
+}
+
+/* ================= 3. 模拟引擎（接真实数据时替换这一段） ================= */
+const R = mulberry32(20261016);
+let NA = CONFIG.agents.length, NW = CONFIG.workflows.length;   // 真实数据模式下随接口变化
+const tasks = Array.from({length: 64}, (_, i) => ({i, id: 'T-' + String(i + 1).padStart(3, '0'),
+  name: CONFIG.taskNames[(R() * CONFIG.taskNames.length) | 0], wf: (R() * NW) | 0, prog: 0, state: 'queued', agent: -1}));
+const agents = CONFIG.agents.map(([code, name], i) => ({i, code, name, task: -1}));
+const wfs = CONFIG.workflows.map((name, i) => ({i, id: 'W' + pad2(i + 1), name, q: 0, cells: Array.from({length: 16}, () => R())}));
+[0.91, 0.86, 0.72, 0.88, 0.84, 0.69, 0.93, 0.82, 0.74, 0.87, 0.71].forEach((q, i) => wfs[i].q = q);
+const order = tasks.map(t => t.i);
+for (let i = order.length - 1; i > 0; i--) { const j = (R() * (i + 1)) | 0; [order[i], order[j]] = [order[j], order[i]]; }
+order.slice(0, 22).forEach(i => { tasks[i].state = 'done'; tasks[i].prog = 1; });
+order.slice(22, 32).forEach((i, k) => { const t = tasks[i]; t.state = 'run'; t.prog = 0.06 + R() * 0.85; t.agent = k; agents[k].task = i; });
+
+const MT = CONFIG.matchThreshold ?? 0.8;
+const running = () => agents.filter(a => a.task >= 0).length;
+const doneCount = () => tasks.filter(t => t.state === 'done').length;
+/* 没有调用样本（q=null / samples=0）不算达标，也不能被当成低于阈值；
+   汇总固定分三类：有样本且达标、有样本但低于阈值、暂无调用。 */
+const matched = () => rateSummary(wfs).matched;
+/* 成功率汇总：三类别分别计数；兼容旧 payload（有 q、没有 samples 字段时按有样本处理）。 */
+function rateSummary(list){
+  const arr = Array.isArray(list) ? list : [];
+  let matched = 0, below = 0, none = 0;
+  for (const w of arr) {
+    const samples = Number.isFinite(w && w.samples) ? w.samples : null;
+    if (samples === 0 || !Number.isFinite(w && w.q)) { none++; continue; }
+    if (w.q >= MT) matched++; else below++;
+  }
+  return {matched, below, none, total: arr.length, withSamples: matched + below};
+}
+/* 成功率文案：百分比 + 原始分子/分母；没有样本就明说「暂无调用」，不给高分 */
+function rateText(w){
+  if (!w) return '—';
+  const ok = Number.isFinite(w.ok) ? w.ok : null;
+  const fail = Number.isFinite(w.fail) ? w.fail : null;
+  const samples = Number.isFinite(w.samples) ? w.samples : (ok != null && fail != null ? ok + fail : null);
+  if (samples === 0) return '暂无调用';
+  if (Number.isFinite(w.q)) {
+    const pct = Math.round(w.q * 100);
+    return samples != null && ok != null ? `${pct}% (${ok}/${samples})` : `${pct}%`;
+  }
+  return '—';
+}
+
+let logN = 38;
+const feed = [];
+const VERB = {read: '读取', build: '生成', check: '核验', review: '复核'};
+function log(verb, t, meta){
+  feed.push({n: logN++, verb, text: `${VERB[verb] || verb} ${t.name}`,
+    code: meta && meta.code, grp: meta && meta.grp, kind: meta && meta.kind,
+    fail: !!(meta && meta.ok === false), src: meta && meta.src, seq: meta && meta.seq});
+  if (feed.length > 400) feed.shift();   // 留够历史，任务流能往上翻
+}
+order.slice(8, 20).forEach((i, k) => log(['read', 'build', 'check', 'review'][k % 4], tasks[i]));
+
+function step(){
+  for (const a of agents) {
+    if (a.task < 0) continue;
+    const t = tasks[a.task];
+    t.prog = Math.min(1, t.prog + 0.03 + Math.random() * 0.08);
+    if (t.prog >= 1) { t.state = 'done'; t.agent = -1; a.task = -1; log(Math.random() < 0.5 ? 'check' : 'review', t); }
+  }
+  for (const a of agents) {
+    if (a.task >= 0 || Math.random() > 0.4) continue;
+    const q = tasks.filter(t => t.state === 'queued');
+    if (!q.length) break;
+    const t = q[(Math.random() * q.length) | 0];
+    t.state = 'run'; t.agent = a.i; t.prog = 0.02; a.task = t.i; log(Math.random() < 0.5 ? 'read' : 'build', t);
+  }
+  const done = tasks.filter(t => t.state === 'done');
+  if (done.length > 54) for (let k = 0; k < 18; k++) { const t = done[(Math.random() * done.length) | 0]; t.state = 'queued'; t.prog = 0; }
+  const w = wfs[(Math.random() * NW) | 0];
+  w.q = Math.max(0.6, Math.min(0.97, w.q + (Math.random() - 0.38) * 0.05));
+  w.cells[(Math.random() * 16) | 0] = Math.random();
+  renderAll();
+}
+
+/* -------- 真实数据接入 ----------------------------------------------------
+   演示模式用上面的模拟引擎让画面先动起来；一旦 /api/agent-ops/state 拉通就切到真实数据。
+   只切一次、不回落：大屏上把假数据当真数据展示，比停在最后一帧更危险。        */
+const API = '';                  // 同源留空；跨域填完整地址（后端需开 CORS）
+/* 数据源：URL 上的 ?source=codex / ?source=all，切换时整页重载 */
+const SRC = (() => { try { return (new URLSearchParams(location.search || '').get('source') || '').trim(); } catch (e) { return ''; } })();
+/* 后端启用了访问令牌时，由服务端注入到页面里；也支持自己在 URL 上带 ?token= */
+const TOKEN = (() => {
+  try {
+    const q = new URLSearchParams(location.search || '').get('token');
+    if (q) return q.trim();
+  } catch (e) { /* 忽略 */ }
+  return (typeof window !== 'undefined' && window.__DSH_TOKEN__) || '';
+})();
+const api = p => {
+  const u = API + p;
+  const parts = [];
+  if (SRC) parts.push('source=' + encodeURIComponent(SRC));
+  if (TOKEN) parts.push('token=' + encodeURIComponent(TOKEN));
+  if (!parts.length) return u;
+  return u + (u.includes('?') ? '&' : '?') + parts.join('&');
+};
+
+/* 带超时的取 JSON：一次卡住不能把轮询永久冻死 */
+async function fetchJSON(url, ms = 4000) {
+  const ac = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ac ? setTimeout(() => ac.abort(), ms) : null;
+  try {
+    const r = await fetch(url, ac ? {cache: 'no-store', signal: ac.signal} : {cache: 'no-store'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+const VERBS = ['read', 'build', 'check', 'review'];
+let LIVE = false;
+/* 连接健康（LIVE / poll.fails / poll.evFails）与数据性质（dataKind）是两件事：
+   mock/内置演示永远是 demo，不会因为「HTTP 接通了」就变成实时数据。 */
+let dataKind = '';               // '' 还没连上 → 内置演示；'demo' 后端明确是假数据；'live' 真实 bridge
+const poll = {cursor: 0, inflight: false, lastOk: 0, fails: 0, epoch: '',
+  /* 请求代际：暂停/恢复各 +1。在途响应若属于旧代际，一律丢弃，保证「数据冻结」严格成立。 */
+  gen: 0,
+  evFails: 0, evLastOk: 0, evFirstFail: 0, evInvalid: 0, evUnknown: 0,   // 事件流单独的健康状态：state 正常但 events 一直挂，要能看出来
+  /* state 协议健康与 events 健康分开计数：200 错误对象不是合法空快照，
+     失败时保留最后可信画面、不更新 lastOk/epoch/cursor/dataKind。 */
+  stateFails: 0, stateLastOk: 0, stateFirstFail: 0, stateError: '', renderError: ''};
+const modeEl = $('#mode');
+const setMode = (txt, cls) => {
+  if (modeEl) { modeEl.textContent = txt; modeEl.className = cls; }
+  /* 水印只表示「数据是不是真的」，和接口健康分开：
+     demo = 假数据 → 打水印；off / ev = 真数据只是接口出问题 → 不打水印，靠顶栏文字提示 */
+  document.body.dataset.demo = cls === 'demo' ? '1' : '0';
+};
+let liveSnippets = [];   // DSH 里真实被写进文件的内容
+let lastSourceList = []; // 最近一次 state 的来源健康列表（降级/缓存标记），供顶栏采集状态使用
+let lastSourceView = ''; // 最近一次视图来源（dsh/codex/claude/all），用于按视图收敛采集时间
+let focus = null;        // 新会话登场时高亮它
+let overflow = 0;        // 活跃会话超过一屏能放的数量
+/* 任务预算省略情况：当前代表任务优先，剩余额度放并行活动/历史；放不下的如实报数 */
+let tasksOmitted = 0, tasksOmittedActive = 0, tasksOmittedHistory = 0, currentOmitted = 0;
+let ringData = null;     // 旋转环带上要写的真实内容
+let mixMode = false;     // 是否「全部合并」模式（要在智能体上加来源角标）
+function renderSources(d){
+  mixMode = d.source === 'all';
+  const list = Array.isArray(d.sourceList) ? d.sourceList : [];
+  if (Array.isArray(d.sourceList)) lastSourceList = list;   // 采集健康要能跨轮次保留最后已知状态
+  lastSourceView = String(d.source || '');
+  const sel = $('#srcSel');
+  if (!sel) return;
+  const total = list.reduce((n, s) => n + (s.sessions || 0), 0);
+  const sig = list.map(s => `${s.id}:${s.name}:${s.sessions}:${s.available ? 1 : 0}:${s.stale ? 1 : 0}`).join(',') + '@' + total;
+  if (sel.dataset.sig !== sig) {
+    sel.dataset.sig = sig;
+    sel.innerHTML = list.map(s =>
+        `<option value="${esc(s.id)}"${(s.available || s.stale) ? '' : ' disabled'}>${esc(s.name)}${s.sessions ? ' (' + s.sessions + ')' : ''}${s.stale ? ' · 缓存可能过期' : ''}</option>`
+    ).join('') + `<option value="all">全部合并 (${total})</option>`;
+  }
+  const want = d.source || SRC || '';
+  if (want && sel.value !== want) sel.value = want;
+}
+/* 采集健康：HTTP 成功只代表接口在线，不代表底层日志扫描成功。
+   降级 / 缓存过期 / 正常三种状态单独呈现；「缓存多久」必须来自源级完整采集时间
+   （sourceList[].lastFullSuccessAt），不能用每次 HTTP state 的获取时间冒充。
+   普通界面只显示可理解的故障类别，不暴露绝对路径、异常 message 或堆栈。 */
+const SCAN_CAT = {EACCES: '权限不可读', EPERM: '权限不可读', ENOENT: '目录不存在', ENOTDIR: '路径异常',
+  EMFILE: '句柄不足', ENOSPC: '空间不足', EBUSY: '设备忙', EIO: '读取失败'};
+function scanCategory(c){ return SCAN_CAT[String(c || '').toUpperCase()] || '读取失败'; }
+/* R10：只接受「原始数值、有限、正数、且不明显在未来」的时间戳；
+   字符串/布尔会被 Number() 强转成 0/1，未来时间也不能被当成 0s 新鲜缓存。 */
+const SCAN_FUTURE_SKEW_MS = 120000;
+function scanAgeOf(s){
+  const t = s && s.lastFullSuccessAt;
+  if (typeof t !== 'number' || !Number.isFinite(t) || t <= 0) return null;
+  const now = Date.now();
+  if (t > now + SCAN_FUTURE_SKEW_MS) return null;
+  return Math.max(0, now - t);
+}
+function scanAgeText(ms){ return ms == null ? '缓存时间未知' : `缓存 ${fmtAgo(ms)} 前`; }
+function renderScanHealth(){
+  const el = $('#scanTag');
+  if (!el) return;
+  if (!LIVE && !dataKind) { el.hidden = true; return; }
+  const list = lastSourceList.filter(s => s && typeof s === 'object');
+  /* R09：告警范围跟随当前来源。单源视图只看该源；只有 all 才合并全部。
+     其他来源的异常单独标注，不描述成「当前画面正在用缓存」。 */
+  const scoped = lastSourceView && lastSourceView !== 'all'
+    ? list.filter(s => s.id === lastSourceView) : list;
+  // R09：明确指定了来源但元数据里没有它 → 当前来源状态未知，不退回其他源故障
+  const known = !lastSourceView || lastSourceView === 'all' || scoped.length > 0 || list.length === 0;
+  const inScope = known ? (scoped.length ? scoped : list) : [];
+  const degraded = inScope.filter(s => s.degraded);
+  const stale = inScope.filter(s => s.stale && !s.degraded);
+  const otherBad = list.filter(s => !inScope.includes(s) && (s.degraded || s.stale));
+  const otherNames = otherBad.map(s => s.name || s.id || '?').join('、');
+  const liveTimes = inScope.filter(s => !s.degraded && !s.stale);
+  const use = liveTimes.length ? liveTimes : inScope;
+  let txt, warn = false;
+  if (!known) {
+    warn = true;
+    txt = '当前来源采集状态未知';
+  } else if (degraded.length) {
+    warn = true;
+    const parts = degraded.map(s => {
+      const cat = scanCategory(s.unexpectedScanFailure && s.unexpectedScanFailure.category);
+      return `${s.name || s.id || '?'}（${cat}，${scanAgeText(scanAgeOf(s))}）`;
+    });
+    txt = `采集降级 · ${parts.join('、')} · 使用缓存`;
+  } else if (stale.length) {
+    warn = true;
+    txt = '缓存可能过期 · ' + stale.map(s => `${s.name || s.id || '?'}（${scanAgeText(scanAgeOf(s))}）`).join('、');
+  } else {
+    const ages = use.map(scanAgeOf);
+    let ageTxt;
+    if (!ages.length || ages.some(a => a == null)) ageTxt = '采集时间未知';
+    else {
+      const max = Math.max(...ages), spread = max - Math.min(...ages) > 2000;
+      ageTxt = `最近完整采集 ${fmtAgo(max)} 前` + (spread ? '（取最旧源）' : '');
+    }
+    txt = `采集正常 · ${ageTxt}`;
+  }
+  if (otherBad.length) txt += ` · 其他来源异常：${otherNames}`;
+  el.hidden = false;
+  el.textContent = txt;
+  el.className = 'rtag scan' + (warn ? ' warn' : '');
+  el.setAttribute('title', warn ? '接口在线，但数据源采集异常：画面可能来自缓存' : '接口与数据源采集都正常');
+}
+/* ================= S03：详情侧栏 =================
+   列表/画布/键盘/触控都走 openDetail；详情用完整字段（后端受控上限），
+   不依赖 Canvas hover 或 tooltip 还原全文。 */
+let detail = null;                 // {kind, identity}：稳定身份，不缓存当轮显示值
+let detailFocusReturn = '', detailTriggerEl = null, detailEpoch = '';
+const detailEl = $('#detail'), detailBodyEl = $('#detailBody'),
+  detailTitleEl = $('#detailTitle'), detailMsgEl = $('#detailMsg'),
+  detailCloseEl = $('#detailClose'), detailCopyEl = $('#detailCopy');
+
+function srcLabel(src){
+  const s = String(src || '');
+  return s === 'dsh' ? 'DSH' : s === 'codex' ? 'Codex' : s === 'claude' ? 'Claude Code' : (s || '未知');
+}
+const agoOf = at => (at ? fmtAgo(Date.now() - at) : '—');
+
+/* R08：按稳定身份解析对象；工作区用不透明 key，智能体用 sid（不使用可回收显示编号）。 */
+function detailFor(kind, id){
+  if (kind === 'wf') {
+    let w = wfs.find(x => String(x.key) === String(id));
+    let i = w ? w.i : -1;
+    if (!w && /^\d+$/.test(String(id))) { i = Number(id); w = wfs[i]; }
+    if (!w) return null;
+    if (i < 0) i = w.i;
+    const members = agents.filter(a => a.wf === i).length;
+    const f = [
+      ['工作区', `${w.id} · ${w.full || w.name}`],
+      ['完整名称', String(w.full || w.name)],
+      ['智能体', String(members)],
+      ['忙碌', String(w.busy || 0)],
+      ['累计失败', String(w.fails || 0)],
+      ['成功率', rateText(w)],
+      ['最近活动', w.idleMs == null ? '—' : `${fmtAgo(w.idleMs)} 前`],
+      ['停滞', w.stalled ? '是' : '否'],
+    ];
+    if (w.lastFail) {
+      f.push(['最近失败', `${w.lastFail.toolFull || w.lastFail.tool || '工具'} · ${w.lastFail.reasonFull || w.lastFail.reason || ''}`]);
+      f.push(['失败命令/目标', String(w.lastFail.detailFull || w.lastFail.detail || '—')]);
+      f.push(['失败时间', agoOf(w.lastFail.at)]);
+    }
+    return {kind, identity: String(w.key != null ? w.key : w.i), title: `${w.id} ${w.full || w.name}`, fields: f};
+  }
+  if (kind === 'agent') {
+    let a = agents.find(x => String(x.sid) === String(id));
+    if (!a) a = agents.find(x => String(x.code) === String(id));
+    if (!a) return null;
+    const t = a.task >= 0 ? tasks[a.task] : null;
+    const w = wfs[a.wf];
+    const f = [
+      ['智能体', `${a.code} · ${a.name}`],
+      ['完整名称', String(a.titleFull || a.nameFull || a.name)],
+      ['来源', a.src ? srcLabel(a.src) : '当前数据源'],
+      ['工作区', w ? `${w.id} · ${w.full || w.name}` : '—'],
+      ['当前调用', t ? `${t.id} · ${t.nameFull || t.name}` : '—'],
+      ['阶段', t ? (t.stage || t.state) : (a.running ? '运行中（任务未展示）' : '空闲')],
+      ['持续时间', Number.isFinite(t && t.since) && t.since > 0 ? fmtAgo(Date.now() - t.since) : '—'],
+      ['最后活动', w && w.idleMs != null ? `${fmtAgo(w.idleMs)} 前` : '—'],
+      ['父智能体', a.parent || '—'],
+    ];
+    if (w && w.lastFail) {
+      f.push(['最近失败', `${w.lastFail.toolFull || w.lastFail.tool || '工具'} · ${w.lastFail.reasonFull || w.lastFail.reason || ''}`]);
+    }
+    return {kind, identity: String(a.sid || a.code), title: `智能体 ${a.code}`, fields: f};
+  }
+  return null;
+}
+
+/* R11：每次根据当前模型重建字段；对象消失/换代时明确不可用，不接同编号新对象。 */
+function detailModel(){
+  if (!detail) return null;
+  const epochNow = poll.epoch || '';
+  if (detailEpoch && epochNow && detailEpoch !== epochNow) {
+    return {kind: detail.kind, identity: detail.identity, available: false, title: '对象不可用',
+      fields: [['状态', '服务实例已换代，详情已失效'], ['身份', detail.identity]]};
+  }
+  return detailFor(detail.kind, detail.identity)
+    || {kind: detail.kind, identity: detail.identity, available: false, title: '对象不可用',
+      fields: [['状态', '对象已离开当前视图或已结束'], ['身份', detail.identity]]};
+}
+
+function renderDetail(){
+  if (!detail) return;
+  const m = detailModel();
+  if (!m) return;
+  if (detailTitleEl && detailTitleEl.textContent !== m.title) detailTitleEl.textContent = m.title;
+  const f = m.fields || [];
+  if (detailBodyEl) {
+    let kids = null;
+    try { kids = detailBodyEl.children ? Array.from(detailBodyEl.children) : null; } catch { kids = null; }
+    if (kids && kids.length === f.length * 2) {
+      // 就地更新文本，保留侧栏滚动与文本选择
+      for (let i = 0; i < f.length; i++) {
+        const dt = kids[i * 2], dd = kids[i * 2 + 1];
+        const k = String(f[i][0]), v = String(f[i][1]);
+        if (dt && dt.textContent !== k) dt.textContent = k;
+        if (dd && dd.textContent !== v) dd.textContent = v;
+      }
+    } else {
+      detailBodyEl.innerHTML = f.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join('');
+    }
+  }
+  if (detailEl) detailEl.hidden = false;
+}
+
+function openDetail(kind, id, trigger){
+  const d = detailFor(String(kind), id);
+  if (!d) return false;
+  detail = {kind: d.kind, identity: d.identity};
+  detailFocusReturn = `${d.kind}:${d.identity}`;
+  detailTriggerEl = trigger && typeof trigger.focus === 'function' ? trigger : null;
+  detailEpoch = poll.epoch || '';
+  if (detailMsgEl) detailMsgEl.textContent = '';
+  renderDetail();
+  if (detailCloseEl && typeof detailCloseEl.focus === 'function') detailCloseEl.focus();
+  return true;
+}
+
+function closeDetail(){
+  // R08：按稳定身份找回当前 DOM 里的按钮；找不到时退回同类的第一个详情按钮
+  const key = detailFocusReturn;
+  const kindPrefix = String(key).split(':')[0] + ':';
+  detail = null;
+  detailTriggerEl = null;
+  detailEpoch = '';
+  if (detailEl) detailEl.hidden = true;
+  if (detailMsgEl) detailMsgEl.textContent = '';
+  if (key) {
+    setTimeout(() => {
+      let target = null;
+      try { target = document.querySelector(`[data-detail="${String(key).replace(/"/g, '')}"]`); } catch { target = null; }
+      if (!target) { try { target = document.querySelector(`[data-detail^="${kindPrefix.replace(/"/g, '')}"]`); } catch { target = null; } }
+      if (!target) { try { target = document.querySelector('[data-detail]'); } catch { target = null; } }
+      if (target && typeof target.focus === 'function') {
+        try { target.focus({preventScroll: true}); } catch { target.focus(); }
+      }
+    }, 0);
+  }
+  return true;
+}
+
+/** 供键盘处理器与测试共用：只处理 Escape 关闭。 */
+function detailKey(k){
+  if (String(k) === 'Escape' && detail) { closeDetail(); return true; }
+  return false;
+}
+
+async function copyDetail(){
+  if (!detail) return {ok: false, text: '', identity: ''};
+  const m = detailModel();
+  const snapshot = `${detail.kind}:${detail.identity}`;
+  const text = `${m.title}\n` + (m.fields || []).map(([k, v]) => `${k}：${v}`).join('\n');
+  let ok = false;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch { ok = false; }
+  // 异步复制完成时，只有仍停留在同一个对象才写提示
+  if (detailMsgEl && detail && `${detail.kind}:${detail.identity}` === snapshot) {
+    detailMsgEl.textContent = ok ? '已复制' : '复制失败，请手动选择';
+  }
+  return {ok, text, identity: snapshot};
+}
+
+function detailState(){
+  const m = detail ? detailModel() : null;
+  const fields = m ? (m.fields || []).map(([k, v]) => ({key: k, value: String(v)})) : [];
+  return {
+    open: !!detail,
+    available: m ? m.available !== false : false,
+    kind: detail ? detail.kind : '',
+    id: detail ? detail.identity : '',
+    title: m ? m.title : '',
+    fields,
+    copyText: m ? `${m.title}\n` + fields.map(f => `${f.key}：${f.value}`).join('\n') : '',
+    focusReturn: detailFocusReturn,
+    epoch: detailEpoch,
+  };
+}
+
+function bindDetailButtons(el){
+  if (!el) return;
+  el.addEventListener('click', e => {
+    const t = e.target;
+    const b = t && typeof t.closest === 'function' ? t.closest('[data-detail]') : null;
+    if (!b) return;
+    const raw = String(b.getAttribute('data-detail') || '');
+    const [kind, id] = raw.split(':');
+    if (kind && id != null) { openDetail(kind, id, b); e.preventDefault(); }
+  });
+}
+bindDetailButtons($('#wfStatus'));
+bindDetailButtons($('#agents'));
+if (detailCloseEl) detailCloseEl.addEventListener('click', closeDetail);
+if (detailCopyEl) detailCopyEl.addEventListener('click', () => { copyDetail(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && detail) { e.preventDefault(); closeDetail(); }
+});
+
+let ringSig = '', lastRingAt = 0;
+/* 环带内容签名：覆盖所有组的所有行，以及耗时/成功状态/数字/字节数。
+   只数个数的话，「1ms 成功」变成「999ms 失败」这种变化会被漏掉。 */
+function ringSignature(ring) {
+  const gs = Array.isArray(ring && ring.groups) ? ring.groups : [];
+  let h = 0x811c9dc5;
+  const acc = str => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } };
+  acc(String(gs.length));
+  for (const g of gs) {
+    acc(String(g.file || ''));
+    for (const line of (g.lines || [])) { acc('|'); acc(String(line)); }
+  }
+  for (const o of (ring.ops || [])) { acc('o'); acc(String(o && o.ms)); acc(o && o.ok ? '1' : '0'); }
+  for (const n of (ring.nums || [])) { acc('n'); acc(String(n)); }
+  for (const z of (ring.sizes || [])) { acc('s'); acc(String(z)); }
+  // 谱线：不能只数条数 —— 数量到上限后，间隔数值仍会变
+  for (const g of (ring.streaks || [])) {
+    acc('g');
+    if (g && typeof g === 'object') { acc(String(g.ms)); acc(g.ok ? '1' : '0'); }
+    else acc(String(g));
+  }
+  return (h >>> 0).toString(36);
+}
+let rateSmooth = 0;      // 平滑后的事件速率（条/秒）
+let beamAt = -99;        // 上次来新事件的时刻，驱动扫光
+let gearPhase = 0;       // 齿环累积转角（速度跟事件速率走）
+
+/* ================= state 协议校验（#8） =================
+   200 只代表 HTTP 通了。state 必须先校验外壳/必需数组/元素形状/ID/数值/引用类型，
+   再构建候选模型；只有候选模型构建成功才统一提交数据（含 epoch/健康）。
+   缺字段、错误对象不等于合法空快照；合法空数组仍然可用。校验失败保留最后可信画面。 */
+function stateShellProblem(d){
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const finite = v => typeof v === 'number' && Number.isFinite(v);
+  const isText = v => typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v));
+  if (!isObj(d)) return 'state 顶层不是对象';
+  for (const k of ['tasks', 'workflows', 'agents']) {
+    if (!Array.isArray(d[k])) return `state.${k} 不是数组`;
+  }
+  const taskIds = new Set(), codes = new Set(), wfIds = new Set();
+  for (let i = 0; i < d.tasks.length; i++) {
+    const n = d.tasks[i];
+    if (!isObj(n)) return `tasks[${i}] 不是对象`;
+    if (n.id == null || String(n.id) === '') return `tasks[${i}] 缺少 id`;
+    const id = String(n.id);
+    if (taskIds.has(id)) return `tasks 的 id 重复：${id}`;
+    taskIds.add(id);
+    if (n.state != null && typeof n.state !== 'string') return `tasks[${i}].state 类型错误`;
+    if (n.name != null && !isText(n.name)) return `tasks[${i}].name 类型错误`;
+    if (n.prog != null && !finite(n.prog)) return `tasks[${i}].prog 不是有限数值`;
+    if (n.wf != null && !finite(n.wf) && typeof n.wf !== 'string') return `tasks[${i}].wf 类型错误`;
+    if (n.agent != null && n.agent !== '' && typeof n.agent !== 'string' && !finite(n.agent)) return `tasks[${i}].agent 类型错误`;
+  }
+  for (let i = 0; i < d.agents.length; i++) {
+    const n = d.agents[i];
+    if (!isObj(n)) return `agents[${i}] 不是对象`;
+    if (n.code == null || String(n.code) === '') return `agents[${i}] 缺少 code`;
+    const code = String(n.code);
+    if (codes.has(code)) return `agents 的 code 重复：${code}`;
+    codes.add(code);
+    if (n.name != null && !isText(n.name)) return `agents[${i}].name 类型错误`;
+    if (n.wf != null && !finite(n.wf)) return `agents[${i}].wf 不是有限数值`;
+    if (n.parent != null && n.parent !== '' && typeof n.parent !== 'string') return `agents[${i}].parent 类型错误`;
+  }
+  for (let i = 0; i < d.workflows.length; i++) {
+    const n = d.workflows[i];
+    if (!isObj(n)) return `workflows[${i}] 不是对象`;
+    if (n.id == null || String(n.id) === '') return `workflows[${i}] 缺少 id`;
+    const id = String(n.id);
+    if (wfIds.has(id)) return `workflows 的 id 重复：${id}`;
+    wfIds.add(id);
+    if (n.name != null && !isText(n.name)) return `workflows[${i}].name 类型错误`;
+    if (n.key != null && typeof n.key !== 'string') return `workflows[${i}].key 类型错误`;
+    for (const f of ['i', 'q', 'busy', 'fails', 'idleMs']) {
+      if (n[f] != null && !finite(n[f])) return `workflows[${i}].${f} 不是有限数值`;
+    }
+    if (n.lastFail != null && !isObj(n.lastFail)) return `workflows[${i}].lastFail 不是对象`;
+  }
+  /* 引用关系：任务/连线里用字符串给出的执行者必须在本快照的 agents 中。
+     数字形式的 agent 属于旧接口兼容（前端本来也解析不到），不在这里判死。 */
+  for (let i = 0; i < d.tasks.length; i++) {
+    const code = d.tasks[i].agent;
+    if (typeof code === 'string' && code !== '' && !codes.has(code)) return `tasks[${i}].agent 引用了不存在的智能体`;
+  }
+  if (d.links != null) {
+    if (!Array.isArray(d.links)) return 'state.links 不是数组';
+    for (let i = 0; i < d.links.length; i++) {
+      const l = d.links[i];
+      if (!isObj(l)) return `links[${i}] 不是对象`;
+      for (const f of ['from', 'to']) {
+        if (typeof l[f] === 'string' && l[f] !== '' && !codes.has(l[f])) return `links[${i}].${f} 引用了不存在的智能体`;
+      }
+    }
+  }
+  /* 旧协议可选字段：缺省允许；给了就必须类型正确，坏响应不能污染 epoch/dataKind/游标。 */
+  if (d.epoch != null && !isText(d.epoch)) return 'state.epoch 类型错误';
+  if (d.source != null && typeof d.source !== 'string') return 'state.source 类型错误';
+  if (d.dataKind != null && typeof d.dataKind !== 'string') return 'state.dataKind 类型错误';
+  for (const f of ['overflow', 'rate', 'active']) {
+    if (d[f] != null && !finite(d[f])) return `state.${f} 不是有限数值`;
+  }
+  if (d.eventBacklog != null && !isObj(d.eventBacklog)) return 'state.eventBacklog 不是对象';
+  if (d.ring != null && !isObj(d.ring)) return 'state.ring 不是对象';
+  if (d.snippets != null && !Array.isArray(d.snippets)) return 'state.snippets 不是数组';
+  return '';
+}
+
+/** 校验并构建候选模型（纯构建，不碰现有画面/派生态）。失败时返回原因，调用方保留最后可信数据。 */
+function buildStateModel(d){
+  const reason = stateShellProblem(d);
+  if (reason) return {ok: false, reason};
+  const tx = new Map(), wx = new Map(), ax = new Map();
+  const tList = d.tasks, wList = d.workflows, aList = d.agents;
+  const nextTasks = [], nextWfs = [], nextAgents = [];
+
+  tList.forEach((n, i) => {
+    const state = n.state === 'done' ? 'done' : n.state === 'run' ? 'run'
+      : n.state === 'failed' ? 'failed' : n.state === 'cancelled' ? 'cancelled' : 'queued';
+    const ended = state === 'done' || state === 'failed' || state === 'cancelled';
+    // 结果语义：结束 ≠ 成功。取消/失败的任务可以显示「已结束」，但不能算成成功任务。
+    const outcome = typeof n.outcome === 'string' && n.outcome ? n.outcome
+      : state === 'run' ? 'running' : state === 'done' ? 'success'
+        : state === 'failed' ? 'failed' : state === 'cancelled' ? 'cancelled' : 'queued';
+    nextTasks.push({i, id: String(n.id), name: String(n.name ?? n.id), wf: 0,
+      // S03：详情字段（完整名称/开始时间），列表仍用截断名
+      nameFull: String(n.nameFull ?? n.name ?? n.id),
+      // R06：只保留原始数值型、正且有限的时间戳；null/''/布尔不能经 Number() 变成 0（纪元）
+      since: (typeof n.since === 'number' && Number.isFinite(n.since) && n.since > 0) ? n.since : null,
+      cur: !!n.cur,   // 保留后端的「当前任务」标记：智能体绑任务时只认它
+      state, outcome,
+      // 阶段型进度：有 stage/indet 就按阶段标签展示，不再把固定阶段值画成百分比
+      stage: typeof n.stage === 'string' ? n.stage : '',
+      indet: n.indet === true,
+      prog: ended ? 1 : Math.max(0, Math.min(1, Number(n.prog) || 0)), agent: -1});
+    tx.set(String(n.id), i);
+  });
+  wList.forEach((n, i) => {
+    nextWfs.push({i, id: String(n.id), name: String(n.name ?? n.id),
+      // 稳定工作区身份：事件里的 workspace 与这里的 key 同值（不是会变的显示编号）
+      key: String(n.key != null ? n.key : (n.id != null ? n.id : '')),
+      full: String(n.full || n.name || n.id),   // 悬浮提示用完整目录名
+      // 成功率：保留后端原始比例与分子/分母；没有样本时保持 null，不能变成 0 或被当成达标
+      q: n.q == null || !Number.isFinite(Number(n.q)) ? null : Math.max(0, Math.min(1, Number(n.q))),
+      ok: n.ok == null ? null : Number(n.ok),
+      fail: n.fail == null ? null : Number(n.fail),
+      samples: n.samples == null ? null : Number(n.samples),
+      cells: [],
+      busy: Number(n.busy) || 0, fails: Number(n.fails) || 0,
+      idleMs: n.idleMs == null ? null : Number(n.idleMs),
+      stalled: !!n.stalled, lastFail: n.lastFail || null});
+    wx.set(String(n.id), i);
+  });
+  const nWf = Math.max(1, nextWfs.length);
+  const wfClamp = v => Math.max(0, Math.min(nWf - 1, Number.isFinite(v) ? v : 0));
+  aList.forEach((n, i) => {
+    nextAgents.push({i, code: String(n.code), name: String(n.name ?? n.code), task: -1,
+      // S03：详情用完整名称（列表仍用 name/title 的截断值）
+      nameFull: String(n.nameFull ?? n.name ?? n.code),
+      titleFull: String(n.titleFull ?? n.title ?? n.name ?? n.code),
+      // R08：稳定会话身份（旧后端没有 sid 时退回显示编号，仅作兼容）
+      sid: String(n.sid || ''),
+      depth: Number(n.depth) || 0,
+      // 工作区统一用下标（后端 workflows[i].i 也是同一个编号）；旧后端不给就按顺序摊开
+      wf: Number.isFinite(n.wf) ? wfClamp(n.wf) : i % nWf,
+      // 合并视图的来源角标（D·/C·/X·）要用到；后端不给就留空
+      src: String(n.src || ''),
+      parent: String(n.parent || ''),
+      // 任务预算极紧时当前任务可能没展示，忙碌状态也不能画成空闲
+      running: !!n.running});
+    ax.set(String(n.code), i);
+  });
+
+  // 用 id 连线，不信任接口给的数组下标
+  // 「当前任务」以后端显式标记的 cur 为准；老后端没这个字段才退回「最后一个 run」
+  const hasCur = tList.some(x => x && x.cur);
+  tList.forEach((n, i) => {
+    const t = nextTasks[i];
+    // wf 可能是下标（新后端）也可能是 ID 字符串（老后端 / 手写接口），两种都认
+    const wi = Number.isFinite(n.wf) ? wfClamp(n.wf) : wx.get(String(n.wf));
+    if (wi != null) t.wf = wi;
+    if (n.agent == null) return;
+    const ai = ax.get(String(n.agent));
+    if (ai == null) return;
+    t.agent = ai;
+    if (hasCur) { if (n.cur) nextAgents[ai].task = i; }
+    else if (t.state === 'run') nextAgents[ai].task = i;
+  });
+
+  /* 汇聚节点数 = 工作区数，最多 5 个（第 6 个起靠 switchHub 轮换显示）。
+     数量没变就保留当前轮换结果，只修复越界/重复（否则每轮询都会跳回前几个工作区）。 */
+  const hn = Math.max(1, Math.min(HUB_MAX, nextWfs.length || 1));
+  let nextHub;
+  if (hubWf.length !== hn) {
+    nextHub = Array.from({ length: hn }, (_, i) => i);
+  } else {
+    nextHub = hubWf.slice();
+    const used = new Set();
+    for (let i = 0; i < hn; i++) {
+      const v = nextHub[i];
+      if (!(Number.isInteger(v) && v >= 0 && v < nextWfs.length) || used.has(v)) nextHub[i] = -1;
+      else used.add(v);
+    }
+    const free = nextWfs.map((_, k) => k).filter(k => !used.has(k));
+    for (let i = 0; i < hn; i++) if (nextHub[i] < 0) nextHub[i] = free.length ? free.shift() : i;
+  }
+  const nextCounts = nextHub.map(wi => nextAgents.filter(a => a.wf === wi).length);
+
+  return {ok: true, model: {
+    raw: d, tasks: nextTasks, wfs: nextWfs, agents: nextAgents,
+    hubWf: nextHub, hubCounts: nextCounts, stage: hubs.length !== hn,
+    links: Array.isArray(d.links) ? d.links : [],
+    overflow: Number(d.overflow) || 0,
+    tasksOmitted: Number(d.tasksOmitted) || 0,
+    tasksOmittedActive: Number(d.tasksOmittedActive) || 0,
+    tasksOmittedHistory: Number(d.tasksOmittedHistory) || 0,
+    currentOmitted: Number(d.currentOmitted) || 0,
+    epoch: d.epoch != null ? String(d.epoch) : '',
+  }};
+}
+
+/** 把已验证的候选模型一次性提交到当前数据/派生态（数组替换不会中途抛错，渲染异常单独记录）。 */
+function commitStateModel(m){
+  tasks.length = 0;
+  for (const t of m.tasks) tasks.push(t);
+  wfs.length = 0;
+  for (const w of m.wfs) wfs.push(w);
+  agents.length = 0;
+  for (const a of m.agents) agents.push(a);
+  NA = agents.length; NW = wfs.length;
+  hubWf = m.hubWf;
+  hubCounts = m.hubCounts;
+  if (m.stage) stageDirty = true;
+  agentLinks = m.links;
+  overflow = m.overflow;
+  tasksOmitted = m.tasksOmitted;
+  tasksOmittedActive = m.tasksOmittedActive;
+  tasksOmittedHistory = m.tasksOmittedHistory;
+  currentOmitted = m.currentOmitted;
+  const tag = $('#servedTag');          // 页面标题上标出"这份是从哪个目录起的"
+  if (tag) tag.textContent = String(m.raw.servedFrom || '');
+  try {
+    renderSources(m.raw);               // 右上角数据源下拉
+    layoutAgents();
+    buildAgentNodes();
+  } catch (err) {
+    // 渲染异常不能回滚已校验通过的数据，也不能伪装成接口故障
+    poll.renderError = String((err && err.message) || err);
+  }
+}
+
+async function pull(){
+  if (location.protocol === 'file:') return setMode('需通过服务器打开', 'off');
+  if (poll.inflight) return;
+  poll.inflight = true;
+  const gen = poll.gen;
+  try {
+    const d = await fetchJSON(api('/api/agent-ops/state'));
+    /* 冻结语义：请求发出之后才暂停/恢复，返回的响应必须整份丢弃 —— 不改数据、游标、代际 */
+    if (gen !== poll.gen || paused) return;
+    let stateOk = false;
+    const wasLive = LIVE;
+    /* 先校验外壳并构建候选模型；构建成功才统一提交数据/epoch/最后成功时间/健康。
+       缺字段、错误对象都不是合法空快照 —— 合法空数组仍然正常提交。 */
+    const built = buildStateModel(d);
+    if (!built.ok) {
+      poll.stateFails++;
+      poll.stateError = built.reason;
+      if (!poll.stateFirstFail) poll.stateFirstFail = Date.now();
+      /* 不更新 epoch、lastOk、cursor、dataKind；保留最后可信数据。
+         events 仍然照常拉取/提交：state 协议故障不能反过来破坏事件流。 */
+    } else {
+      const m = built.model;
+      const prevCodes = new Set(agents.map(a => a.code));
+      // 后端重启后事件序号会从 1 重来，前端还拿着旧游标就永远等不到新事件。
+      // 只有校验通过的 state 才能提供 epoch：错误响应不能先改代际。
+      if (m.epoch && m.epoch !== poll.epoch) {
+        const restarted = !!poll.epoch;
+        poll.epoch = m.epoch;
+        if (restarted) { poll.cursor = 0; feed.length = 0; logN = 1; feedFollow = true; window.__eventGap = false; window.__eventGapKind = ''; resetParticlesOnRestart(); }
+      }
+      commitStateModel(m);
+      // 数据性质看后端标记；老后端没有这个字段才按真实数据兼容。
+      // 注意不能因为「这次请求成功」就把之前的 demo 洗成 live —— 那是连接健康，不是数据性质。
+      dataKind = d.dataKind === 'demo' ? 'demo'
+        : d.dataKind === 'live' ? 'live'
+          : (dataKind || 'live');
+      try {
+        const bl = d.eventBacklog;
+        /* 缺口提示要保持到 epoch 重置（否则游标追上后立刻消失）。分两种：
+           live = 连接期间事件被挤掉（游标 > 0）；init = 首次连接时历史就已经被截断（游标为 0）。 */
+        if (bl && bl.oldest) {
+          if (poll.cursor > 0 && poll.cursor + 1 < bl.oldest) window.__eventGapKind = 'live';
+          else if (poll.cursor === 0 && bl.oldest > 1) window.__eventGapKind = 'init';
+          window.__eventGap = !!window.__eventGapKind;
+        }
+      } catch { /* 忽略 */ }
+      if (Array.isArray(d.snippets)) liveSnippets = d.snippets;
+      if (d.ring) {
+        const sig = ringSignature(d.ring);
+        // 环带文字每隔一会儿换一批，别每秒抖一次
+        if (sig !== ringSig && (!ringData || performance.now() - lastRingAt > 9000)) {
+          ringSig = sig; lastRingAt = performance.now(); ringData = d.ring;
+          if (G) { buildBlocks(); buildStreaks(); needs = true; }
+        }
+      }
+      rateSmooth += ((Number(d.rate) || 0) - rateSmooth) * 0.3;   // 事件速率平滑，驱动粒子和齿环
+      if (d.verbs) {
+        const o = ['read', 'build', 'check', 'review'];
+        const mix = o.map(k => Math.max(0, Number(d.verbs[k]) || 0));
+        if (mix[0] + mix[1] + mix[2] + mix[3] > 0) verbMix = mix;   // 粒子颜色比例 = 真实动作分布
+      }
+      if (wasLive) {
+        const added = agents.filter(a => !prevCodes.has(a.code));
+        if (added.length) focusNew(added[0].code);   // 新会话登场 → 放大 + 高亮
+      }
+      // 首次拿到可信 state 才丢掉演示期的假日志/游标
+      if (!wasLive) { feed.length = 0; logN = 1; poll.cursor = 0; feedFollow = true; }
+      poll.stateFails = 0; poll.stateError = ''; poll.stateFirstFail = 0; poll.stateLastOk = Date.now();
+      poll.renderError = '';
+      LIVE = true; poll.fails = 0; poll.lastOk = poll.stateLastOk;
+      document.body.removeAttribute('data-offline');
+      stateOk = true;
+    }
+    // 事件流单独兜：它挂了不该把已经拿到的 state 一起作废，但状态要如实反映
+    let evs = null;
+    try {
+      evs = await fetchJSON(api('/api/agent-ops/events?after=' + poll.cursor));
+    } catch {
+      evs = null;
+    }
+    /* 事件响应同样受冻结门禁：暂停开始后返回的事件不能推进游标或写入任务流 */
+    if (gen !== poll.gen || paused) return;
+    /* 200 只代表 HTTP 通了。只有 events 是数组、且每个合法元素都带正整数 seq/verb 才算协议可用；
+       非法元素（错误对象、null、非数组、坏 seq）一律保持健康告警，不能清 evFails。 */
+    let fresh = 0, evInvalid = 0, evUnknown = 0;
+    if (Array.isArray(evs)) {
+      for (const ev of evs) {
+        const seq = (ev && typeof ev === 'object') ? ev.seq : null;
+        const verbOk = !!(ev && typeof ev === 'object' && typeof ev.verb === 'string' && ev.verb);
+        if (!Number.isInteger(seq) || seq <= 0 || !verbOk) { evInvalid++; continue; }
+        if (seq <= poll.cursor) continue;    // 重复/乱序：跳过，游标不能回退
+        poll.cursor = seq;                   // 合法序号先前进：未知动作也不能让人反复读同一窗口
+        if (!VERBS.includes(ev.verb)) { evUnknown++; continue; }   // 未知 verb → 不画，但游标已前进
+        log(ev.verb, {name: String(ev.task_name ?? ev.taskName ?? '')},
+          {code: ev.agent, grp: ev.name, kind: ev.kind, ok: ev.ok, src: ev.src, seq: ev.seq});
+        onLiveEvent(ev);   // 每条真实事件 → 一个粒子（粒子面板的唯一来源）
+        fresh++;
+      }
+    }
+    poll.evInvalid = evInvalid;
+    poll.evUnknown = evUnknown;
+    if (Array.isArray(evs) && evInvalid === 0) {
+      poll.evFails = 0; poll.evLastOk = Date.now(); poll.evFirstFail = 0;
+    } else {
+      poll.evFails++;
+      if (!poll.evFirstFail) poll.evFirstFail = Date.now();   // 记录第一次失败，用来算中断时长
+    }
+    if (fresh) beamAt = simT;   // 来新事件 → 扫一次光
+
+    /* state 故障与 events 故障分开计数/呈现：
+       state 协议错误保留最后可信画面并明确报错，不能因为 events 正常就显示成健康实时。 */
+    let statusTxt, statusCls;
+    const stateBad = poll.stateFails >= 2;
+    const evBad = poll.evFails >= 2;
+    if (stateBad) {
+      statusTxt = '数据快照异常 ' + poll.stateFails + ' 次';
+      if (evBad) statusTxt += ' · 事件流也中断';
+      statusCls = 'off';
+    } else if (evBad) {
+      // 从没成功连上过 → 「尚未连接」；连过再断 → 「中断 Ns」
+      const since = poll.evLastOk || poll.evFirstFail || Date.now();
+      statusTxt = poll.evLastOk
+        ? '事件流中断 ' + Math.round((Date.now() - since) / 1000) + 's'
+        : '事件流尚未连接';
+      statusCls = 'ev';
+    } else if (poll.stateFails > 0) {
+      statusTxt = '数据快照异常 · 已保留上次可信画面';
+      statusCls = 'off';
+    } else {
+      statusTxt = '实时数据';
+      statusCls = 'live';
+    }
+    if (dataKind === 'demo') {           // 数据性质优先于连接健康：演示数据永远带演示标识/水印
+      statusTxt = '演示数据 · ' + ((stateBad || evBad || poll.stateFails > 0) ? statusTxt : '已连接');
+      statusCls = 'demo';
+    }
+    setMode(statusTxt, statusCls);
+    if (!wasLive && stateOk) {
+      stageDirty = true;   // 切到真实数据后重建静态层（背景纹理要压暗）
+      snippetQueue = []; queueKind = ''; nextCodeSet(); renderCode();
+    }
+    try {
+      renderAll();
+    } catch (err) {
+      // 渲染失败单独记录：数据已经提交，不能回滚成「最后可信画面」或伪装成接口故障
+      poll.renderError = String((err && err.message) || err);
+    }
+  } catch (err) {
+    /* R02：异常提交同样受冻结门禁。暂停期间或旧代际的拒绝/解析失败/超时，
+       不得增加失败数、设置离线标记或改写连接文案（快速暂停恢复也不能被旧请求污染）。 */
+    if (gen !== poll.gen || paused) return;
+    poll.fails++;
+    if (LIVE) {
+      document.body.dataset.offline = '1';
+      // 真实连接中断：保留最后一份真实数据 + 断线提示，绝不回落演示数据
+      const msg = '数据中断 ' + Math.round((Date.now() - poll.lastOk) / 1000) + 's';
+      setMode(dataKind === 'demo' ? '演示数据 · ' + msg : msg, dataKind === 'demo' ? 'demo' : 'off');
+    } else {
+      setMode('演示数据 · 未连接', 'demo');
+    }
+  } finally { poll.inflight = false; }
+}
+
+/* 新会话登场：面板行放大两次 + 整个舞台轻微 zoom + 飞轮上打一圈波纹 */
+function focusNew(code){
+  focus = {code, at: simT, until: simT + 2.6, timer: 0};
+  clearTimeout(focus.timer);
+  if (!reduce) {                        // 减少动效：只保留高亮标记，不做整屏缩放动画
+    stage.classList.remove('zoom');
+    void stage.offsetWidth;               // 强制回流，让动画能重放
+    stage.classList.add('zoom');
+    focus.timer = setTimeout(() => stage.classList.remove('zoom'), 620);
+  }
+}
+
+/* ================= 4. DOM 面板 ================= */
+const themeBtn = $('#theme'), pauseBtn = $('#pause'), pauseTag = $('#pauseTag');
+const motionTag = $('#motionTag');   // 「减少动效」是独立状态：只关动画，数据仍然实时
+const feedEl = $('#feed'), agentsEl = $('#agents'), codeEl = $('#code');
+const feedBoxEl = $('#feedBox'), feedJumpEl = $('#feedJump');
+const feedFailEl = $('#feedFail'), feedSrcEl = $('#feedSrc'), feedAgentEl = $('#feedAgent');
+
+/* 工作区状态：谁在忙、哪里失败、多久没有进展 —— 这是这张大屏最该先回答的问题 */
+function fmtAgo(ms){
+  if (ms == null || !Number.isFinite(ms)) return '—';
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.round(s / 60);
+  if (m < 60) return m + 'm';
+  return Math.round(m / 60) + 'h';
+}
+/** 列表每秒重渲染：如果焦点在某个详情按钮上，重建 DOM 后要把它还回去。 */
+function setListHTML(el, html){
+  if (!el) return;
+  const active = (typeof document !== 'undefined') ? document.activeElement : null;
+  const dd = active && active.getAttribute ? active.getAttribute('data-detail') : null;
+  el.innerHTML = html;
+  if (dd && el.contains && !el.contains(active)) {
+    const again = el.querySelector(`[data-detail="${String(dd).replace(/"/g, '')}"]`);
+    if (again && typeof again.focus === 'function') {
+      try { again.focus({preventScroll: true}); } catch { again.focus(); }
+    }
+  }
+}
+
+function renderWorkflowStatus(){
+  const ul = $('#wfStatus');
+  if (!ul) return;
+  const now = Date.now();
+  const FRESH_MS = 10 * 60000;
+  /* 新失败（10 分钟内）优先于停滞，再是忙碌，最后空闲；同类按失败时间/原顺序稳定排。 */
+  const freshOf = w => !!(w.fails > 0 && w.lastFail && w.lastFail.at && (now - w.lastFail.at < FRESH_MS));
+  const rankOf = w => freshOf(w) ? 0 : w.stalled ? 1 : w.busy > 0 ? 2 : 3;
+  const list = wfs.map((w, i) => ({w, i}))
+    .sort((a, b) => rankOf(a.w) - rankOf(b.w)
+      || ((b.w.lastFail && b.w.lastFail.at) || 0) - ((a.w.lastFail && a.w.lastFail.at) || 0)
+      || a.i - b.i);
+  setListHTML(ul, list.map(({w}) => {
+    const failFresh = freshOf(w);
+    // 停滞优先于忙碌：一个智能体卡了 15 分钟还挂着「未完成调用」，本质是停滞，不是忙
+    const cls = failFresh ? 'fail' : w.stalled ? 'stall' : w.busy > 0 ? 'busy' : 'idle';
+    const bits = [];
+    if (w.stalled) bits.push(`<b>停滞 ${fmtAgo(w.idleMs)}</b>`);
+    else if (w.busy > 0) bits.push(`<b>忙 ${w.busy}</b>`);
+    if (w.stalled && w.busy > 0) bits.push(`忙 ${w.busy}`);   // 停滞但仍有未完成调用
+    if (w.fails > 0) bits.push(`失败 ${w.fails}${failFresh ? '（新）' : ''}`);
+    if (!w.stalled) bits.push(`${fmtAgo(w.idleMs)} 前`);
+    const msg = failFresh && w.lastFail
+      ? `<span class="failmsg">↳ ${esc(String(w.lastFail.tool || '工具'))} · ${esc(String(w.lastFail.reason || w.lastFail.detail || ''))}</span>`
+      : '';
+    return `<li class="${cls}"><span class="wid">${esc(w.id)}</span>`
+      + `<span class="wname">${esc(w.name)}</span>`
+      + `<span class="wst">${bits.join(' · ')}</span>`
+      + `<button class="detailbtn" type="button" data-detail="wf:${esc(String(w.key != null ? w.key : w.i))}" aria-label="查看工作区 ${esc(w.id)} 详情">详情</button>${msg}</li>`;
+  }).join(''));
+  /* 醒目区：固定显示最多 3 个「新失败 / 停滞 / 忙」对象，不靠画面活动才能发现。 */
+  const att = $('#attention');
+  if (att) {
+    const hot = [];
+    for (const {w} of list) {
+      const r = rankOf(w);
+      if (r >= 3) break;
+      const what = r === 0 ? `新失败 ${fmtAgo(now - w.lastFail.at)} 前`
+        : r === 1 ? `停滞 ${fmtAgo(w.idleMs)}` : `忙 ${w.busy}`;
+      hot.push(`${w.id} ${w.name} ${what}`);
+      if (hot.length >= 3) break;
+    }
+    att.textContent = hot.length ? '需要处理：' + hot.join(' · ') : '暂无异常';
+    att.dataset.state = hot.length ? 'warn' : 'ok';
+  }
+}
+
+function renderStats(){
+  const run = running();
+  $('#s0').textContent = tasks.length;
+  // 口径必须写清楚：TASKS 是任务记录（工具调用/待办），不是交付物；省略项也要让用户看得见
+  const s0 = $('#s0');
+  if (s0) {
+    let t = '当前上屏的任务记录（工具调用与待办），不是交付物数量';
+    if (tasksOmitted > 0 || currentOmitted > 0) {
+      t += `；已省略 ${tasksOmitted} 个任务（活动 ${tasksOmittedActive} / 历史 ${tasksOmittedHistory}）`
+        + (currentOmitted > 0 ? `，另有 ${currentOmitted} 个当前任务未展示` : '');
+    }
+    s0.setAttribute('title', t);
+  }
+  $('#s1').innerHTML = `${run} <small>/ ${NA}</small>`;
+  $('#s2').textContent = NW;
+  $('#s3').textContent = doneCount();
+  const sum = rateSummary(wfs);
+  $('#s4').innerHTML = `${sum.matched} <small>/ ${sum.total}</small>`;
+  $('#s5').textContent = sum.below;
+  $('#feedMeta').textContent = tasks.length + ' tasks'
+    + (tasksOmitted > 0 ? ` · 省略 ${tasksOmitted}（活动 ${tasksOmittedActive} / 历史 ${tasksOmittedHistory}）` : '')
+    + (currentOmitted > 0 ? ` · 当前未展示 ${currentOmitted}` : '')
+    + ` · 事件缓存 ${feed.length}/400`;
+  $('#agTitle').textContent = `${NA} AGENT${NA === 1 ? '' : 'S'}`;
+  $('#noteMain').textContent = `${sum.matched} / ${sum.total} 达标 · ${sum.below} 低于阈值 · ${sum.none} 暂无调用`;
+  $('#agMeta').textContent = `${Math.max(0, NA - run)} idle` + (overflow > 0 ? ` · +${overflow}` : '');
+}
+/* 任务流：渲染一屏 + 一段缓冲，容器可滚动。
+   S05：历史阅读锚点存「首个可见事件 seq + 行内偏移」，不存像素位置；
+   新事件进入或缓存淘汰后按 seq 找回来，淘汰时明确提示。 */
+let feedFollow = true;
+const FEED_ROW_H = 13.5;
+let feedAnchor = null, feedEvicted = 0, feedMaxSeqAtLeave = 0, feedUnread = 0;
+let feedFilter = {failOnly: false, src: '', code: ''};
+let lastFeedRows = [];        // 与渲染行对齐的 [{seq}]（分组头/提示行为 null）
+const feedSeqOf = e => (e && e.seq != null ? Number(e.seq) : Number(e && e.n));
+const feedNewestSeq = () => (feed.length ? feedSeqOf(feed[feed.length - 1]) : 0);
+
+function onFeedScroll(){
+  const box = feedBoxEl;
+  if (!box) return;
+  const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 12;
+  if (feedFollow && !atBottom) feedMaxSeqAtLeave = feedNewestSeq();
+  feedFollow = atBottom;
+  if (atBottom) { feedAnchor = null; feedEvicted = 0; feedUnread = 0; }
+}
+
+function syncFeedAgentOptions(){
+  const sel = $('#feedAgent');
+  if (!sel) return;
+  const sig = agents.map(a => a.code).join(',');
+  if (sel.dataset.sig === sig) return;
+  sel.dataset.sig = sig;
+  sel.innerHTML = '<option value="">全部智能体</option>'
+    + agents.map(a => `<option value="${esc(a.code)}">${esc(a.code)} ${esc(a.name)}</option>`).join('');
+  sel.value = feedFilter.code || '';
+}
+
+function syncFeedFilterUI(){
+  const b = $('#feedFail');
+  if (b) { b.setAttribute('aria-pressed', String(!!feedFilter.failOnly)); b.classList.toggle('on', !!feedFilter.failOnly); }
+  const s = $('#feedSrc'); if (s) s.value = feedFilter.src || '';
+  const a = $('#feedAgent'); if (a) a.value = feedFilter.code || '';
+}
+
+/** 测试/交互共用：切换筛选（改视图后回到最新） */
+function setFeedFilter(patch){
+  feedFilter = {...feedFilter, ...(patch || {})};
+  feedFollow = true; feedAnchor = null; feedEvicted = 0; feedUnread = 0;
+  feedMaxSeqAtLeave = feedNewestSeq();
+  syncFeedAgentOptions(); syncFeedFilterUI();
+  renderFeed();
+}
+
+function renderFeed(){
+  syncFeedAgentOptions();
+  const box = feedBoxEl;
+  const boxH = (box ? box.clientHeight : feedEl.clientHeight) || 180;
+  const visible = Math.max(4, Math.ceil(boxH / FEED_ROW_H));
+  const winLen = Math.max(visible + 60, 120);
+  const filtered = feed.filter(e => (!feedFilter.failOnly || e.fail)
+    && (!feedFilter.src || e.src === feedFilter.src)
+    && (!feedFilter.code || e.code === feedFilter.code));
+  /* R07：先按旧行与当前滚动位置抓「正在看的事件」；真实 DOM 里优先用行 offsetTop/offsetHeight，
+     分组标题、换行提示的高度各不相同，不能统一按 13.5px 估算。 */
+  let prevAnchor = null;
+  if (!feedFollow && box && lastFeedRows.length) {
+    const top = Math.max(0, Number(box.scrollTop) || 0);
+    let kids = null;
+    try { kids = feedEl && feedEl.children ? Array.from(feedEl.children) : null; } catch { kids = null; }
+    let rowIdx = -1, rowTop = 0;
+    if (kids && kids.length === lastFeedRows.length) {
+      // 先找到当前可见行，再跳过 null（分组头/提示行）取最近的真实事件行
+      let base = -1;
+      for (let i = 0; i < kids.length; i++) {
+        const t0 = kids[i].offsetTop || 0, h = kids[i].offsetHeight || FEED_ROW_H;
+        if (top < t0 + h) { base = i; break; }
+      }
+      if (base < 0) base = kids.length - 1;
+      for (let j = base; j < kids.length; j++) {
+        if (lastFeedRows[j]) { rowIdx = j; rowTop = kids[j].offsetTop || 0; break; }
+      }
+      if (rowIdx < 0) for (let j = base; j >= 0; j--) {
+        if (lastFeedRows[j]) { rowIdx = j; rowTop = kids[j].offsetTop || 0; break; }
+      }
+    } else {
+      const idx = Math.min(lastFeedRows.length - 1, Math.floor(top / FEED_ROW_H));
+      rowIdx = idx; rowTop = idx * FEED_ROW_H;
+      let found = !!(lastFeedRows[rowIdx] && Number.isFinite(lastFeedRows[rowIdx].seq));
+      if (!found) for (let j = idx; j < lastFeedRows.length; j++) {
+        if (lastFeedRows[j]) { rowIdx = j; rowTop = j * FEED_ROW_H; found = true; break; }
+      }
+      if (!found) for (let j = idx; j >= 0; j--) {
+        if (lastFeedRows[j]) { rowIdx = j; rowTop = j * FEED_ROW_H; found = true; break; }
+      }
+    }
+    const row = lastFeedRows[rowIdx];
+    if (row) prevAnchor = {seq: row.seq, offset: Math.max(0, top - rowTop)};
+  }
+  /* 阅读历史时围绕锚点取窗口，而不是永远取最后 120 条 */
+  let winStart = Math.max(0, filtered.length - winLen);
+  if (!feedFollow && prevAnchor) {
+    const anchorFull = filtered.findIndex(e => feedSeqOf(e) === prevAnchor.seq);
+    if (anchorFull >= 0) {
+      winStart = Math.max(0, Math.min(anchorFull - Math.floor(winLen * 0.6), filtered.length - winLen));
+      winStart = Math.max(0, winStart);
+    }
+  }
+  const evs = filtered.slice(winStart, winStart + winLen);
+  const base = [], meta = [];
+  if (window.__eventGap) {
+    const gapInit = window.__eventGapKind === 'init';
+    base.push(`<li class="gapnote">${gapInit
+      ? '连接前的事件历史已截断（缓存只保留最近 400 条），当前是从中途开始看的'
+      : '连接期间丢了事件（缓存只保留最近 400 条）'}</li>`);
+    meta.push(null);
+  }
+  let lastCode = null;
+  for (const e of evs) {
+    if (e.code && e.code !== lastCode) {
+      lastCode = e.code;
+      base.push(`<li class="grp"><b>${esc(e.code)}</b>${esc(e.grp || '')}</li>`);
+      meta.push(null);
+    }
+    const seq = feedSeqOf(e);
+    base.push(`<li data-seq="${seq}" class="${e.kind === 'msg' ? 'msg' : ''}${e.fail ? ' fail' : ''}"><span class="n">${String(e.n).padStart(3, '0')}</span><span class="vb">${e.fail ? '✕ ' + esc(e.verb) : esc(e.verb)}</span><span class="d">${esc(e.text)}</span></li>`);
+    meta.push(Number.isFinite(seq) ? {seq} : null);
+  }
+  /* 淘汰判定看完整过滤后缓存，而不是当前渲染窗口：
+     事件还在缓存、只是离开了最新窗口，不能误报「已被淘汰」。 */
+  let evictedNow = 0;
+  if (prevAnchor && !filtered.some(e => feedSeqOf(e) === prevAnchor.seq)) evictedNow = prevAnchor.seq;
+  const rows = [], meta2 = [];
+  if (evictedNow || feedEvicted) {
+    const gone = evictedNow || feedEvicted;
+    rows.push(`<li class="gapnote evicted">正在阅读的事件（#${gone}）已被缓存淘汰，只保留最近 400 条，已跳到最近可用位置</li>`);
+    meta2.push(null);
+    feedEvicted = gone;
+  }
+  rows.push(...base); meta2.push(...meta);
+  feedEl.innerHTML = rows.join('');
+  lastFeedRows = meta2;
+  if (!box) return;
+  if (feedFollow) {
+    box.scrollTop = box.scrollHeight;
+    feedAnchor = null; feedUnread = 0; feedEvicted = 0;
+  } else if (prevAnchor && evictedNow === 0) {
+    const idx2 = meta2.findIndex(r => r && r.seq === prevAnchor.seq);
+    if (idx2 >= 0) {
+      let kids2 = null;
+      try { kids2 = feedEl.children ? Array.from(feedEl.children) : null; } catch { kids2 = null; }
+      if (kids2 && kids2.length === meta2.length) box.scrollTop = (kids2[idx2].offsetTop || 0) + prevAnchor.offset;
+      else box.scrollTop = idx2 * FEED_ROW_H + prevAnchor.offset;
+      feedAnchor = {seq: prevAnchor.seq, offset: prevAnchor.offset};
+    } else {
+      const first = lastFeedRows.find(r => r);
+      feedAnchor = first ? {seq: first.seq, offset: 0} : null;
+      box.scrollTop = 0;
+    }
+  } else if (prevAnchor) {
+    const first = lastFeedRows.find(r => r);
+    feedAnchor = first ? {seq: first.seq, offset: 0} : null;
+    box.scrollTop = 0;
+  } else {
+    box.scrollTop = 0;
+  }
+  if (!feedFollow) feedUnread = feed.filter(e => feedSeqOf(e) > feedMaxSeqAtLeave).length;
+  else feedUnread = 0;
+  if (feedJumpEl) {
+    feedJumpEl.hidden = feedFollow;
+    feedJumpEl.textContent = feedUnread > 0 ? `↓ 最新 (${feedUnread})` : '↓ 最新';
+  }
+}
+/** 滚回底部并恢复自动跟底 */
+function feedToBottom(){
+  feedFollow = true;
+  feedAnchor = null; feedEvicted = 0; feedUnread = 0; feedMaxSeqAtLeave = 0;
+  if (feedBoxEl) feedBoxEl.scrollTop = feedBoxEl.scrollHeight;
+  if (feedJumpEl) { feedJumpEl.hidden = true; feedJumpEl.textContent = '↓ 最新'; }
+}
+let agRows = 0;   // agents 面板原本写死 2×6=12 格，智能体数量变了要跟着重排
+/** S07：两列布局下行数 = ceil(n/2)；99 个智能体是 50 行，靠最小行高 + 内部滚动而不是压扁 */
+function agentRows(n){ return Math.max(1, Math.ceil((Number(n) || 0) / 2)); }
+function layoutAgents(){
+  const rows = agentRows(agents.length);
+  if (rows === agRows) return;
+  agRows = rows;
+  agentsEl.style.gridTemplateRows = `repeat(${rows},minmax(16px,1fr))`;
+}
+function renderAgents(){
+  layoutAgents();
+  /* 阶段标签优先用后端给的 stage；没有 stage 的旧数据按状态给通用阶段，绝不按 prog 编造百分比 */
+  const stageOf = t => t.stage || (t.state === 'failed' ? '已失败' : t.state === 'cancelled' ? '已取消'
+    : t.state === 'done' ? '已完成' : t.state === 'run' ? '运行中' : '排队中');
+  setListHTML(agentsEl, agents.map(a => {
+    const t = a.task >= 0 ? tasks[a.task] : null;
+    // 预算极端时当前任务可能没展示，但只要会话确实在跑，就不能画成 idle
+    // 任务号 + 阶段标签：保留可追查的编号，但进度只按阶段说明，不编造百分比
+    const st = t ? `${t.id} · ${stageOf(t)}` : a.running ? 'running · 任务未展示' : 'idle';
+    // 来源角标必须能区分：dsh→D、codex→CX、claude→CC（原来 Codex/Claude 都显示 C）
+    const SRC_TAG = {dsh: 'D', codex: 'CX', claude: 'CC'};
+    const srcTag = (mixMode && a.src) ? (SRC_TAG[a.src] || String(a.src).slice(0, 2).toUpperCase()) + '·' : '';
+    const pop = focus && focus.code === a.code && simT < focus.until ? ' pop' : '';
+    // 不定进度：阶段型任务（工具调用/推理/待办）没有真实百分比，用移动条而不是定宽比例
+    const bar = !t ? '<i style="width:0%"></i>'
+      : t.indet === true ? '<i class="ind"></i>'
+        : `<i style="width:${Math.max(4, Math.min(1, Number(t.prog) || 0) * 100).toFixed(0)}%"></i>`;
+    return `<li class="${(t || a.running) ? 'busy' : 'idle'}${pop}"><span class="n">${esc(a.code)}</span><span class="r">${esc(a.name)}</span><span class="b"><b>${bar}</b><small>${esc(srcTag + st)}</small></span><button class="detailbtn" type="button" data-detail="agent:${esc(a.sid || a.code)}" aria-label="查看智能体 ${esc(a.code)} 详情">详情</button></li>`;
+  }).join(''));
+}
+function renderAll(){ renderStats(); renderFeed(); renderAgents(); renderWorkflowStatus(); renderScanHealth(); if (detail) renderDetail(); if (hoverHub >= 0) showTip(); }
+
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/* 语法高亮：在**原始文本**上分词，再逐段转义、包标签。
+   绝不能在已经生成的 HTML 上再做全局关键词/字符串替换 —— 那样会命中自己插入的
+   class="str"/class="kw"/<span>，把结构改坏（复核 #13）。 */
+const KW_WORDS = {
+  py: new Set('for in if def return not assert lambda class import from elif else while with as try except None True False'.split(' ')),
+  js: new Set('const let var function return if else for while of in new class import export from async await try catch throw typeof instanceof null undefined true false this'.split(' ')),
+  html: new Set('div span html head body style script canvas meta link title section article'.split(' ')),
+};
+const IS_COMMENT = {
+  py: s => s.startsWith('#'),
+  js: s => /^(\/\/|\/\*|\*|\*\/)/.test(s),
+  html: () => false,
+  text: () => false,
+};
+/* 普通语言：注释 / 字符串 / 关键字 / 其余文本。每个分支都只处理原始文本。 */
+function hlCode(src, lang, words){
+  let out = '', i = 0;
+  const isWord = c => /[A-Za-z_$]/.test(c);
+  const isWordCh = c => /[A-Za-z0-9_$]/.test(c);
+  while (i < src.length) {
+    const c = src[i], two = src.slice(i, i + 2);
+    if (lang === 'js' && two === '//') { out += `<span class="cm">${esc(src.slice(i))}</span>`; break; }
+    if (lang === 'js' && two === '/*') {
+      const e = src.indexOf('*/', i + 2), end = e < 0 ? src.length : e + 2;
+      out += `<span class="cm">${esc(src.slice(i, end))}</span>`; i = end; continue;
+    }
+    if (lang === 'py' && c === '#') { out += `<span class="cm">${esc(src.slice(i))}</span>`; break; }
+    if (c === '"' || c === "'" || (lang === 'js' && c === '`')) {
+      const triple = lang === 'py' && src.startsWith(c + c + c, i);
+      if (triple) {
+        const close = src.indexOf(c + c + c, i + 3), end = close < 0 ? src.length : close + 3;
+        out += `<span class="str">${esc(src.slice(i, end))}</span>`; i = end; continue;
+      }
+      let j = i + 1;
+      while (j < src.length) {
+        if (src[j] === '\\') { j += 2; continue; }
+        if (src[j] === c) { j++; break; }
+        j++;
+      }
+      out += `<span class="str">${esc(src.slice(i, j))}</span>`; i = j; continue;
+    }
+    if (isWord(c)) {
+      let j = i + 1;
+      while (j < src.length && isWordCh(src[j])) j++;
+      const w = src.slice(i, j);
+      out += words.has(w) ? `<span class="kw">${esc(w)}</span>` : esc(w);
+      i = j; continue;
+    }
+    out += esc(c); i++;
+  }
+  return out;
+}
+/* HTML：标签名 → kw，属性值 → str，注释 → cm，标签外的文本只转义。 */
+function hlHtml(src, words){
+  let out = '', i = 0;
+  while (i < src.length) {
+    const lt = src.indexOf('<', i);
+    if (lt < 0) { out += esc(src.slice(i)); break; }
+    out += esc(src.slice(i, lt));
+    if (src.startsWith('<!--', lt)) {
+      const e = src.indexOf('-->', lt + 4), end = e < 0 ? src.length : e + 3;
+      out += `<span class="cm">${esc(src.slice(lt, end))}</span>`; i = end; continue;
+    }
+    out += esc('<'); i = lt + 1;
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '>') { out += esc('>'); i++; break; }
+      if (c === '"' || c === "'") {
+        let j = i + 1;
+        while (j < src.length && src[j] !== c) { if (src[j] === '\\') j++; j++; }
+        if (j < src.length) j++;
+        out += `<span class="str">${esc(src.slice(i, j))}</span>`; i = j; continue;
+      }
+      if (/[A-Za-z_]/.test(c)) {
+        let j = i + 1;
+        while (j < src.length && /[A-Za-z0-9_:-]/.test(src[j])) j++;
+        const w = src.slice(i, j);
+        out += words.has(w.toLowerCase()) ? `<span class="kw">${esc(w)}</span>` : esc(w);
+        i = j; continue;
+      }
+      out += esc(c); i++;
+    }
+  }
+  return out;
+}
+function hl(s, lang){
+  lang = lang || 'py';
+  const src = String(s == null ? '' : s);
+  if (!src) return '';
+  if ((IS_COMMENT[lang] || IS_COMMENT.py)(src.trim())) return `<span class="cm">${esc(src)}</span>`;
+  const words = KW_WORDS[lang];
+  if (!words) return esc(src);           // text：只转义，不猜关键词
+  return lang === 'html' ? hlHtml(src, words) : hlCode(src, lang, words);
+}
+
+/* 执行代码：逐字打出一套，停顿后换另一套；一轮内不重复，也不会连着出现同一套。
+   真实数据模式下改成打 DSH 里真正被写进文件的内容。 */
+let codeOrder = [], codeIdx = -1, cset = null, cl = 0, cc = 0, hold = 0, linePause = 0;
+let snippetQueue = [], queueKind = '';
+const langOfFile = f => /\.py$/i.test(f) ? 'py'
+  : /\.(js|mjs|cjs|ts|tsx|jsx|json)$/i.test(f) ? 'js'
+    : /\.(html?|css)$/i.test(f) ? 'html' : 'text';
+
+function nextCodeSet(){
+  if (LIVE) {
+    // 优先用真实的「写文件」内容；没有就用环带上那批真实行；再没有就明说
+    const kind = liveSnippets.length ? 'snip' : ((ringData && ringData.groups && ringData.groups.length) ? 'ring' : 'none');
+    const pool = kind === 'snip' ? liveSnippets
+      : kind === 'ring' ? ringData.groups.map(g => ({ file: g.file, lines: g.lines, lang: langOfFile(g.file), start: 1, agent: '' }))
+        : [];
+    if (kind !== queueKind) { snippetQueue = []; queueKind = kind; }
+
+    if (pool.length) {
+      if (!snippetQueue.length) snippetQueue = pool.slice();   // 新的先打
+      const s = snippetQueue.shift() || pool[0];
+      cset = {file: s.file, start: s.start || 1, lines: s.lines, lang: s.lang || 'text'};
+      cl = 0; cc = 0; hold = 0; linePause = 0;
+      $('#codeMeta').textContent = `${s.file}${s.agent ? ' · ' + s.agent : ''}`;
+      return;
+    }
+    // 这个数据源没有可展示的代码 —— 明确说出来，绝不退回演示代码
+    cset = {file: '—', start: 1, lang: 'text', lines: ['该数据源当前没有可展示的代码记录（无 write / edit 调用）']};
+    cl = 0; cc = 0; hold = 80; linePause = 0;
+    $('#codeMeta').textContent = '无代码记录';
+    return;
+  }
+  if (!codeOrder.length) {
+    codeOrder = CONFIG.codeSets.map((_, i) => i).filter(i => i !== codeIdx);
+    for (let i = codeOrder.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [codeOrder[i], codeOrder[j]] = [codeOrder[j], codeOrder[i]]; }
+  }
+  codeIdx = codeOrder.shift();
+  cset = CONFIG.codeSets[codeIdx]; cl = 0; cc = 0; hold = 0; linePause = 0;
+  const a = agents[cset.agent] || agents[0] || {code: '--', name: ''};
+  $('#codeMeta').textContent = `${cset.file} · ${a.code} ${a.name}`;
+}
+function renderCode(){
+  const fit = Math.max(4, Math.floor(codeEl.clientHeight / 13));
+  let html = '';
+  for (let i = Math.max(0, cl - fit + 1); i <= cl; i++) {
+    const txt = i < cl ? cset.lines[i] : cset.lines[i].slice(0, cc);
+    html += `<span class="row${i === cl ? ' cur' : ''}"><span class="ln">${String(i + cset.start).padStart(3, '0')}</span>${hl(txt, cset.lang)}${i === cl ? '<span class="caret"></span>' : ''}</span>`;
+  }
+  codeEl.innerHTML = html;
+}
+function typeTick(){
+  // 减少动效：代码整段出现，不做逐字动画（数据仍随轮询更新）
+  if (reduce) {
+    if (cset && (cl !== cset.lines.length - 1 || cc !== cset.lines[cl].length)) {
+      cl = cset.lines.length - 1; cc = cset.lines[cl].length; renderCode();
+    }
+    return;
+  }
+  if (hold > 0) { if (--hold === 0) nextCodeSet(); renderCode(); return; }
+  if (linePause > 0) { linePause--; return; }
+  cc += Math.random() < 0.3 ? 2 : 1;
+  if (cc >= cset.lines[cl].length) {
+    cc = cset.lines[cl].length;
+    if (cl < cset.lines.length - 1) { renderCode(); cl++; cc = 0; linePause = 5; }
+    else hold = 60;
+  }
+  renderCode();
+}
+
+/* ================= 5. 主舞台 ================= */
+const stage = $('#stage'), sc = $('#sc'), sctx = sc.getContext('2d'), tip = $('#tip');
+let W = 1, H = 1, DPR = 1, G = null, layThreads = null, layRing = null;
+let hubs = [], pulses = [], blocks = [], streaks = [], blockFS = 8, blockLH = 11;
+let agentNodes = [], agentLinks = [], hubCounts = [];   // 真实智能体节点 + 父子边
+let hoverHub = -1, needs = true, stageDirty = true, panelsNeed = true;
+const HUB_MAX = 5;              // 左侧最多画 5 个汇聚节点，第 6 个工作区起靠轮换显示
+let hubWf = [];
+let hubCh = [];                // 每个节点上次切换工作区的时刻（切换时跑乱码动画）
+let hubTurn = 0;
+const ax = (Rr, y) => G.cx + Math.sqrt(Math.max(0, Rr * Rr - (y - G.cy) * (y - G.cy)));
+const visAng = (Rr, pad) => Math.asin(Math.min(1, (Math.max(G.cy, H - G.cy) + pad) / Rr));
+function mkLayer(){ const cv = document.createElement('canvas'); cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); const c = cv.getContext('2d'); c.setTransform(DPR, 0, 0, DPR, 0, 0); return [cv, c]; }
+function bloom(cv, c, amount){
+  if (!T.dark || typeof c.filter !== 'string') return;
+  const g = document.createElement('canvas'); g.width = cv.width; g.height = cv.height;
+  const gc = g.getContext('2d'); gc.filter = `blur(${3 * DPR}px)`; gc.drawImage(cv, 0, 0);
+  c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'lighter'; c.globalAlpha = amount; c.drawImage(g, 0, 0); c.restore();
+}
+
+function layoutStage(){
+  const r = sc.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  sc.width = Math.round(W * DPR); sc.height = Math.round(H * DPR);
+  const narrow = W < 700;
+  const R1 = narrow ? Math.max(H * 0.8, W * 0.85) : Math.max(H * 0.72, W * 0.24);
+  const cx = W * (narrow ? 0.36 : 0.40) - R1;
+  G = {cx, cy: H * 0.5 + (narrow ? 70 : 22), R1, R2: R1 + W * (narrow ? 0.26 : 0.22), narrow};
+  buildStreaks(); buildThreads(); buildRing(); buildBlocks(); buildAgentNodes();
+}
+
+/* --- 飞轮谱线：整圈生成，每帧只画可见扇区 --- */
+function buildStreaks(){
+  const rr = mulberry32(5), thVis = visAng(G.R2, 30);
+  const density = (G.narrow ? 420 : 1100) / (2 * thVis);
+  streaks = [];
+  const mk = (th, Lc, hot, bForce) => {
+    const s = {th: ((th % TAU) + TAU) % TAU, off: 20 + rr() * 4, f: Lc * (0.7 + rr() * 0.42), b: bForce != null ? bForce : ((rr() * 4) | 0), hot, d: []};
+    const nd = rr() < 0.42 ? 1 + ((rr() * 2) | 0) : 0;
+    for (let i = 0; i < nd; i++) s.d.push({p: rr() * 0.92, len: 4 + rr() * 34, v: 0});
+    if (rr() < 0.3) s.d.push({p: rr(), len: 5 + rr() * 20, v: 0.05 + rr() * 0.22});
+    streaks.push(s);
+  };
+  const data = (LIVE && ringData && ringData.streaks && ringData.streaks.length) ? ringData.streaks : null;
+  if (data) {
+    // 一条谱线 = 一次真实工具调用：长度按耗时取对数，慢的和失败的打亮
+    const n = Math.min(data.length, G.narrow ? 700 : 1400);
+    let maxMs = 1;
+    for (const o of data) if (o.ms > maxMs) maxMs = o.ms;
+    const lg = Math.log1p(maxMs);
+    for (let i = 0; i < n; i++) {
+      const o = data[i];
+      const Lc = Math.min(1, Math.max(0.14, Math.log1p(o.ms) / lg));
+      mk((i / n) * TAU + (rr() - 0.5) * (TAU / n) * 0.7, Lc, !o.ok || o.ms > maxMs * 0.5, 3);
+    }
+    return;
+  }
+  let a = 0;
+  while (a < TAU) {
+    const spread = 0.008 + rr() * 0.045, n = Math.round(spread * 2 * density * (0.6 + rr() * 0.9));
+    const Lc = 0.28 + rr() * 0.72, hot = rr() < 0.14;
+    for (let j = 0; j < n; j++) mk(a + (rr() * 2 - 1) * spread, Lc, hot);
+    a += spread * 2 + rr() * 0.05;
+  }
+  const nl = Math.round(density * 0.25 * TAU);
+  for (let j = 0; j < nl; j++) mk(rr() * TAU, 0.15 + rr() * 0.85, false);
+}
+
+function buildThreads(){
+  const [cv, c] = mkLayer(), rr = mulberry32(99), {cx, cy, R1, narrow} = G;
+  const k = narrow ? 0.5 : 1, A = (T.dark ? 1.3 : 1) * (LIVE ? 0.4 : 1);   // 真实拓扑接管后，背景纹理压暗
+  const inner = y => ax(R1, y);
+  const rp = (padR = 8) => { const y = rr() * H; return [rr() * Math.max(10, inner(y) - padR), y]; };
+  c.save(); c.beginPath(); c.arc(cx, cy, R1 - 1, 0, TAU); c.clip();
+  c.lineCap = 'round'; c.strokeStyle = T.line;
+  for (let i = 0; i < Math.round(360 * k); i++) {
+    const [x1, y1] = rp(), [x2, y2] = rp();
+    c.globalAlpha = Math.min(1, (0.05 + rr() * 0.2) * A); c.lineWidth = 0.45 + rr() * 0.5;
+    c.beginPath(); c.moveTo(x1, y1); c.quadraticCurveTo((x1 + x2) / 2 + (rr() - 0.5) * 90, (y1 + y2) / 2 + (rr() - 0.5) * 90, x2, y2); c.stroke();
+  }
+  for (let i = 0; i < Math.round(22 * k); i++) {
+    const rad = 200 + rr() * 900, a0 = rr() * TAU;
+    c.globalAlpha = (0.08 + rr() * 0.16) * A; c.lineWidth = 0.6;
+    c.beginPath(); c.arc(rr() * W * 0.4 - rad * 0.3, rr() * H, rad, a0, a0 + 0.3 + rr() * 0.8); c.stroke();
+  }
+  hubs = [];
+  /* 节点个数跟着工作区走：1 个工作区就 1 个节点，2 个就 2 个，最多 3 个 */
+  const span = narrow ? [-0.2, 0.3] : [-0.33, 0.34];
+  const hubN = Math.max(1, Math.min(HUB_MAX, wfs.length || 1));
+  const offs = hubN === 1
+    ? [(span[0] + span[1]) / 2]
+    : Array.from({ length: hubN }, (_, i) => span[0] + (span[1] - span[0]) * i / (hubN - 1));
+  offs.forEach((off, h) => {
+    const y = cy + H * off, x = inner(y) - 3, hub = {x, y, curves: [], wf: h};
+    if (hubCh[h] == null) hubCh[h] = -10;
+    const n = Math.round((narrow ? 40 : 80) + rr() * 30);
+    for (let i = 0; i < n; i++) {
+      const sy = y + (rr() - 0.5) * H * 1.1, sx = rr() * Math.max(20, x - 60);
+      const q = {x1: sx, y1: sy, cx: x - (x - sx) * (0.18 + rr() * 0.25), cy: y + (sy - y) * (0.02 + rr() * 0.18), x2: x, y2: y + (rr() - 0.5) * 3};
+      hub.curves.push(q);
+      c.strokeStyle = T.dark && rr() < 0.22 ? T.hi : T.line;
+      c.globalAlpha = Math.min(1, (0.14 + rr() * 0.5) * A); c.lineWidth = 0.45 + rr() * 0.7; qd(c, q);
+    }
+    c.strokeStyle = T.dark ? T.hi : T.line; c.globalAlpha = 1; c.lineWidth = 3.2;
+    c.beginPath(); c.moveTo(x - 16, y); c.lineTo(x + 1, y); c.stroke();
+    hubs.push(hub);
+  });
+  c.strokeStyle = T.line; c.fillStyle = T.line; c.lineWidth = 0.8;
+  for (let i = 0; i < Math.round(28 * k); i++) { const [x, y] = rp(20), s = 3 + rr() * 3; c.globalAlpha = 0.7 * A; c.strokeRect(x - s / 2, y - s / 2, s, s); }
+  for (let i = 0; i < Math.round(14 * k); i++) { const [x, y] = rp(20); c.globalAlpha = 0.6 * A; c.beginPath(); c.arc(x, y, 2.5 + rr() * 6, 0, TAU); c.stroke(); }
+  for (let i = 0; i < Math.round(16 * k); i++) { const [x, y] = rp(20); c.globalAlpha = 0.85; c.beginPath(); c.arc(x, y, 1.4 + rr() * 1.6, 0, TAU); c.fill(); }
+  c.lineWidth = 1.6;
+  for (let i = 0; i < Math.round(26 * k); i++) { const [x, y] = rp(20), a = rr() * TAU, l = 5 + rr() * 9; c.globalAlpha = 0.8; c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); c.stroke(); }
+  { const [x, y] = rp(130); c.lineWidth = 0.9; c.globalAlpha = 0.75; for (let i = 0; i < 6; i++) { c.beginPath(); c.arc(x + i * 15, y - i * 4, 3.2, 0, TAU); c.stroke(); } }
+  c.restore();
+  c.globalAlpha = 1;
+  bloom(cv, c, 0.55);
+  layThreads = cv;
+  pulses = Array.from({length: narrow ? 14 : 34}, () => newPulse(true)).filter(Boolean);
+}
+  /* 流入光点只属于「这个工作区现在有任务在跑」的节点；
+     没有任务的工作区保留静态的线，但没有流入效果。 */
+  function hubRunning(i){
+    const wi = hubWf[i];
+    if (wi == null) return false;
+    return tasks.some(t => t.wf === wi && t.state === 'run');
+  }
+  function newPulse(rand){
+    const avail = hubs.map((_, i) => i).filter(i => hubRunning(i));
+    if (!avail.length) return null;
+    const hi = avail[(Math.random() * avail.length) | 0];
+    const h = hubs[hi];
+    return {h: hi, q: h.curves[(Math.random() * h.curves.length) | 0], u: rand ? Math.random() : 0, v: 0.16 + Math.random() * 0.34};
+  }
+  /* 右侧父子连线同样遵守「有任务才有流入」：目标智能体没有运行中的任务时，
+     只画静态的线，不画沿线流动的亮点。不能因为空闲/退出就把整条线删掉。 */
+  function agentRunning(code){
+    // tasks[].agent 是「智能体下标」（commitStateModel 里按 code 映射过），不是编号字符串
+    const ai = agents.findIndex(a => String(a.code) === String(code));
+    if (ai < 0) return false;
+    return tasks.some(t => t.agent === ai && t.state === 'run');
+  }
+
+/* --- 真实智能体节点：一个会话一个点，Lead→子智能体 用亮线连起来 --- */
+function buildAgentNodes(){
+  if (!G) return;
+  const n = agents.length;
+  agentNodes = agents.map((a, i) => {
+    const t = n <= 1 ? 0.5 : i / (n - 1);
+    const y = G.cy + (t - 0.5) * Math.min(H * 0.62, 480);
+    const inner = ax(G.R1, y);
+    const x = Math.max(26, inner * (0.20 + 0.20 * (((i * 5) % 7) / 7)));
+    return {code: a.code, name: a.name, x, y, depth: a.depth || 0, i};
+  });
+}
+/** S03：画布智能体命中（比工作区节点更小的半径），点击即打开详情。 */
+function agentAt(x, y){
+  let best = '', bd = 1e9;
+  for (const n of agentNodes) {
+    const d = Math.hypot(x - n.x, y - n.y);
+    if (d < 16 && d < bd) { bd = d; best = n.code; }
+  }
+  return best;
+}
+
+function drawAgentGraph(c, t){
+  if (!agentNodes.length) return;
+  const by = new Map(agentNodes.map(n => [n.code, n]));
+  const flowing = new Set(agents.filter(a => agentRunning(a.code)).map(a => a.code));
+  c.lineCap = 'round';
+  // 父子连线（真实关系）：线始终保留；只有目标智能体有任务时才有沿线流动的亮点
+  for (const l of agentLinks) {
+    const a = by.get(l.from), b = by.get(l.to);
+    if (!a || !b) continue;
+    const mx = (a.x + b.x) / 2 - 26, my = (a.y + b.y) / 2;
+    c.strokeStyle = T.dark ? T.hot : T.line;
+    c.globalAlpha = T.dark ? 0.75 : 0.55; c.lineWidth = 1.3;
+    c.beginPath(); c.moveTo(a.x, a.y); c.quadraticCurveTo(mx, my, b.x, b.y); c.stroke();
+    if (!flowing.has(l.to)) continue;   // 空闲/已退出：保留静态线，不画流入效果
+    const u = (t * 0.4 + (l.from.charCodeAt(0) % 10) / 10) % 1, v = 1 - u;
+    c.globalAlpha = 1; c.fillStyle = T.dark ? T.hi : T.ink;
+    c.beginPath(); c.arc(v * v * a.x + 2 * v * u * mx + u * u * b.x,
+      v * v * a.y + 2 * v * u * my + u * u * b.y, 1.5, 0, TAU); c.fill();
+  }
+  // 节点
+  c.textAlign = 'left'; c.textBaseline = 'middle';
+  for (const n of agentNodes) {
+    const on = focus && focus.code === n.code && t < focus.until;
+    c.globalAlpha = 1;
+    c.fillStyle = T.bg; c.strokeStyle = T.dark ? T.hi : T.line; c.lineWidth = on ? 1.6 : 0.9;
+    c.beginPath(); c.arc(n.x, n.y, on ? 5 : 3.4, 0, TAU); c.fill(); c.stroke();
+    c.font = `700 ${on ? 9 : 8}px ${FONT}`;
+    const tw = c.measureText(n.code).width;
+    c.fillStyle = T.bg; c.fillRect(n.x + 5, n.y - 5.5, tw + 5, 11);   // 底衬，压在装饰线上也能看清
+    c.fillStyle = on ? T.ink : T.text;
+    c.globalAlpha = on ? 1 : 0.85;
+    c.fillText(n.code, n.x + 7, n.y);
+    if (on) {
+      const k = Math.min(1, (t - focus.at) / 2.4);
+      c.globalAlpha = 0.85 * (1 - k);
+      c.strokeStyle = T.dark ? T.hot : T.line; c.lineWidth = 1.2;
+      c.beginPath(); c.arc(n.x, n.y, 6 + k * 54, 0, TAU); c.stroke();
+    }
+  }
+  c.globalAlpha = 1;
+}
+
+/* --- 环带底板：只放不转的部分（底色、两条弧、节点标签） --- */
+function buildRing(){
+  const [cv, c] = mkLayer(), {cx, cy, R1, R2, narrow} = G, half = Math.PI / 2;
+  c.beginPath(); c.arc(cx, cy, R2, 0, TAU); c.arc(cx, cy, R1, 0, TAU, true); c.fillStyle = T.band; c.fill();
+  c.strokeStyle = T.line;
+  if (T.dark) { c.globalAlpha = 0.18; c.lineWidth = 5; c.beginPath(); c.arc(cx, cy, R2, -half, half); c.stroke(); c.beginPath(); c.arc(cx, cy, R1, -half, half); c.stroke(); }
+  c.globalAlpha = T.dark ? 0.95 : 0.85; c.lineWidth = 1.1;
+  c.beginPath(); c.arc(cx, cy, R1, -half, half); c.stroke();
+  c.beginPath(); c.arc(cx, cy, R2, -half, half); c.stroke();
+  c.globalAlpha = 0.3; c.lineWidth = 0.7; c.beginPath(); c.arc(cx, cy, R2 - 7, -half, half); c.stroke();
+  c.globalAlpha = 1;
+  layRing = cv;
+}
+
+/* --- 环带数据块：整圈排布，随飞轮一起转，文字沿半径方向 --- */
+/* 真实模式下这些文字全部来自 DSH：代码行、工具调用与耗时、工作区名。 */
+function buildBlocks(){
+  blocks = [];
+  if (!G) return;
+  blockFS = G.narrow ? 5.8 : 8.8; blockLH = blockFS * 1.34;
+  const R = (LIVE && ringData && ringData.groups && ringData.groups.length) ? ringData : null;
+  let gi = 0, oi = 0, ni = 0;
+  const nGroup = () => R.groups[gi++ % R.groups.length];
+  const nOp = () => ((R.ops && R.ops.length) ? R.ops[oi++ % R.ops.length] : null);
+  const nNum = () => ((R.nums && R.nums.length) ? R.nums[ni++ % R.nums.length] : 0);
+  for (const col of (G.narrow ? [0] : [0, 1])) {
+    const rr = mulberry32(11 + col * 97);
+    const types = col ? ['table', 'grid', 'bars', 'table', 'tag'] : ['code', 'table', 'bars', 'code', 'tag', 'code'];
+    let th = rr() * 0.05;
+    while (th < TAU - 0.06) {
+      const type = pick(rr, types); let lines = [];
+      if (type === 'code') {
+        const g = R ? nGroup() : null;   // 一个块只用同一个文件的行，保证对得上
+        lines = ['// ' + (g ? g.file : pick(rr, ['source / extract', 'audit / compare', 'dispatch / route', 'review / revise']))];
+        const n = 5 + ((rr() * 6) | 0);
+        for (let i = 0; i < n; i++) lines.push(g ? g.lines[i % g.lines.length] : pick(rr, CODEBITS));
+      } else if (type === 'table') {
+        const n = 6 + ((rr() * 4) | 0);
+        for (let i = 0; i < n; i++) {
+          const op = R ? nOp() : null;
+          if (op) lines.push(`${String(oi).padStart(3, '0')}  ${(op.ms / 1000).toFixed(4)}  ${op.ok ? 'ok ' : 'chk'}  ${op.ms}ms`);
+          else lines.push(`${String((rr() * 99) | 0).padStart(3, '0')}  ${(rr() * 0.09).toFixed(4)}  ${rr() < 0.8 ? 'ok ' : 'chk'}  ${(100 + rr() * 900) | 0}ms`);
+        }
+      } else if (type === 'grid') {
+        const n = 5 + ((rr() * 3) | 0);
+        for (let i = 0; i < n; i++) {
+          let s = '';
+          for (let j = 0; j < 8; j++) s += String(R ? (nNum() % 100) : ((rr() * 99) | 0)).padStart(2, '0') + ' ';
+          lines.push(s.trim());
+        }
+      } else if (type === 'bars') { lines = Array(4 + ((rr() * 3) | 0)).fill(''); }
+      else {
+        const wt = pick(rr, wfs) || {id: 'W--', name: ''};
+        lines = [`${wt.id} — ${R ? (wt.name || '') : pick(rr, ['mood', 'drift', 'scope', 'route', 'spec'])}`];
+      }
+      const h = lines.length * blockLH + 4, dth = h / G.R1;
+      if (th + dth > TAU - 0.03) break;
+      blocks.push({type, lines, h, th: th + dth / 2, col, ind: rr(), seed: (rr() * 100000) | 0});
+      th += dth + (10 + rr() * 18) / G.R1;
+    }
+  }
+}
+
+function drawBlocks(c, t){
+  const {cx, cy, R1, R2} = G, rot = t * SPIN, band = R2 - R1, thVis = visAng(R1, 50);
+  c.font = `500 ${blockFS}px ${FONT}`; c.textBaseline = 'top';
+  for (const b of blocks) {
+    const th = wrapPI(b.th + rot);
+    if (th > thVis || th < -thVis) continue;
+    const x0 = R1 + 14 + (b.col ? band * 0.5 : 0) + b.ind * band * 0.04;
+    const maxW = b.col || G.narrow ? Math.max(12, R2 - (G.narrow ? 34 : 54) - x0) : band * 0.45;
+    const y = -b.h / 2;
+    c.save(); c.translate(cx, cy); c.rotate(th);
+    if (b.type === 'bars') {
+      const rr = mulberry32(b.seed); c.fillStyle = T.text; c.globalAlpha = 0.9;
+      for (let i = 0; i < b.lines.length; i++) { let x = x0; const lim = x0 + Math.min(maxW, G.narrow ? 34 : 64); while (x < lim) { const w = 2 + rr() * 9; if (rr() < 0.62) c.fillRect(x, y + 2 + i * blockLH, Math.min(w, lim - x), blockLH * 0.55); x += w + 1.5; } }
+    } else {
+      const hi = b.type === 'code' ? 1 + (((t * 0.6) | 0) + b.seed) % (b.lines.length - 1) : -1;
+      for (let i = 0; i < b.lines.length; i++) {
+        const ly = y + 2 + i * blockLH;
+        if (i === hi) {
+          const tw = Math.min(maxW, c.measureText(b.lines[i]).width) + 4;
+          c.globalAlpha = 1; c.fillStyle = T.text; c.fillRect(x0 - 2, ly - 1, tw, blockLH); c.fillStyle = T.band;
+        } else {
+          c.fillStyle = T.text; c.globalAlpha = i === 0 && b.type !== 'table' && b.type !== 'grid' ? 1 : b.type === 'code' ? 0.8 : 0.62;
+        }
+        c.fillText(b.lines[i], x0, ly, maxW);
+      }
+    }
+    c.restore();
+  }
+  c.globalAlpha = 1;
+}
+
+/* --- 飞轮刻度与字节标签，跟着转 --- */
+const labelVal = k => {
+  const sz = ringData && ringData.sizes;
+  if (LIVE && sz && sz.length) return sz[((k % sz.length) + sz.length) % sz.length];
+  return (((k * 2654435761) >>> 0) % 360) + 20;
+};
+function drawWheelMarks(c, t){
+  const {cx, cy, R1, R2, narrow} = G, rot = t * SPIN;
+  const p = new Path2D(), s1 = 6 / R1, t1 = visAng(R1, 12);
+  for (let k = Math.ceil((-t1 - rot) / s1), e = Math.floor((t1 - rot) / s1); k <= e; k++) {
+    const a = k * s1 + rot, l = k % 5 === 0 ? 9 : 4, ca = Math.cos(a), sa = Math.sin(a);
+    p.moveTo(cx + ca * (R1 + 2), cy + sa * (R1 + 2)); p.lineTo(cx + ca * (R1 + 2 + l), cy + sa * (R1 + 2 + l));
+  }
+  c.strokeStyle = T.line; c.globalAlpha = 0.7; c.lineWidth = 0.8; c.stroke(p);
+  const q = new Path2D(), s2 = 3.2 / R2, t2 = visAng(R2, 12);
+  for (let k = Math.ceil((-t2 - rot) / s2), e = Math.floor((t2 - rot) / s2); k <= e; k++) {
+    const a = k * s2 + rot, l = k % 10 === 0 ? 8 : 3, ca = Math.cos(a), sa = Math.sin(a);
+    q.moveTo(cx + ca * (R2 - 1), cy + sa * (R2 - 1)); q.lineTo(cx + ca * (R2 - 1 - l), cy + sa * (R2 - 1 - l));
+  }
+  c.globalAlpha = 0.55; c.lineWidth = 0.7; c.stroke(q);
+  const s3 = (narrow ? 34 : 46) / R2;
+  c.globalAlpha = 1; c.fillStyle = T.dim; c.font = `${narrow ? 6 : 8}px ${FONT}`; c.textAlign = 'right'; c.textBaseline = 'middle';
+  const fmtB = n => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  for (let k = Math.ceil((-t2 - rot) / s3), e = Math.floor((t2 - rot) / s3); k <= e; k++) {
+    c.save(); c.translate(cx, cy); c.rotate(k * s3 + rot); c.fillText(`${fmtB(labelVal(k))} b`, R2 - 13, 0); c.restore();
+  }
+  c.textAlign = 'left';
+}
+
+/* --- 飞轮谱线：基础细线 + 荧光扇区 + 滑动亮段 --- */
+const BA = [0.09, 0.17, 0.27, 0.4];
+function drawWheelStreaks(c, t, dt){
+  const {cx, cy, R2} = G, rot = t * SPIN, thVis = visAng(R2, 30);
+  const base = [new Path2D(), new Path2D(), new Path2D(), new Path2D()], hotP = new Path2D(), dashP = new Path2D(), hotD = new Path2D();
+  for (const s of streaks) {
+    const th = wrapPI(s.th + rot);
+    if (th > thVis || th < -thVis) continue;
+    const cp = Math.cos(th), sp = Math.sin(th), r0 = R2 + s.off, x0 = cx + cp * r0, y0 = cy + sp * r0;
+    const reach = Math.max(40, (W + 20 - x0) / Math.max(0.2, cp)), L = Math.min(reach, s.f * reach);
+    const p = s.hot ? hotP : base[s.b];
+    p.moveTo(x0, y0); p.lineTo(x0 + cp * L, y0 + sp * L);
+    const q = s.hot ? hotD : dashP;
+    for (const d of s.d) {
+      if (d.v) d.p = (d.p + d.v * dt) % 1;
+      const a0 = d.p * L, a1 = Math.min(L, a0 + d.len);
+      q.moveTo(x0 + cp * a0, y0 + sp * a0); q.lineTo(x0 + cp * a1, y0 + sp * a1);
+    }
+  }
+  c.lineCap = 'butt'; c.strokeStyle = T.line; c.lineWidth = 0.7;
+  const A = T.dark ? 1.3 : 1;
+  base.forEach((p, i) => { c.globalAlpha = Math.min(0.9, BA[i] * A); c.stroke(p); });
+  if (T.dark) {
+    c.globalCompositeOperation = 'lighter';
+    c.strokeStyle = T.hot; c.globalAlpha = 0.1; c.lineWidth = 4.5; c.stroke(hotP);
+    c.globalAlpha = 0.6; c.lineWidth = 0.9; c.stroke(hotP);
+    c.globalAlpha = 0.12; c.strokeStyle = T.hi; c.lineWidth = 5; c.stroke(dashP);
+    c.globalAlpha = 0.9; c.lineWidth = 1.6; c.stroke(dashP);
+    c.strokeStyle = T.hot; c.globalAlpha = 0.3; c.lineWidth = 7; c.stroke(hotD);
+    c.strokeStyle = T.hi; c.globalAlpha = 1; c.lineWidth = 2; c.stroke(hotD);
+    c.globalCompositeOperation = 'source-over';
+  } else {
+    c.strokeStyle = T.hot; c.globalAlpha = 0.5; c.lineWidth = 0.8; c.stroke(hotP);
+    c.strokeStyle = T.line; c.globalAlpha = 0.8; c.lineWidth = 1.5; c.stroke(dashP);
+    c.strokeStyle = T.hot; c.globalAlpha = 0.95; c.lineWidth = 2; c.stroke(hotD);
+  }
+  c.globalAlpha = 1;
+}
+
+function drawPulses(c, dt){
+  const p = new Path2D();
+  /* 先扔掉「所在工作区没任务」的光点，再从有任务的节点补足数量 ——
+     这样流入效果本身就代表"这个工作区正在跑活儿"。 */
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    if (!pulses[i] || !hubRunning(pulses[i].h)) pulses.splice(i, 1);
+  }
+  const wantN = G && G.narrow ? 14 : 34;
+  while (pulses.length < wantN) { const np0 = newPulse(false); if (!np0) break; pulses.push(np0); }
+  for (let i = 0; i < pulses.length; i++) {
+    const m = pulses[i]; m.u += m.v * dt;
+    if (m.u > 1) { const np = newPulse(false); if (np) pulses[i] = np; else { pulses.splice(i, 1); i--; } continue; }
+    const u0 = Math.max(0, m.u - 0.07);
+    for (let k = 0; k <= 6; k++) { const [x, y] = bez(m.q, u0 + (m.u - u0) * k / 6); k ? p.lineTo(x, y) : p.moveTo(x, y); }
+  }
+  c.lineCap = 'round';
+  if (T.dark) { c.globalCompositeOperation = 'lighter'; c.strokeStyle = T.hi; c.globalAlpha = 0.12; c.lineWidth = 4.5; c.stroke(p); c.globalAlpha = 0.9; c.lineWidth = 1.4; c.stroke(p); c.globalCompositeOperation = 'source-over'; }
+  else { c.strokeStyle = T.line; c.globalAlpha = 0.8; c.lineWidth = 1.35; c.stroke(p); }
+  c.globalAlpha = 1;
+}
+function drawHubMarks(c, t){
+  hubs.forEach((h, i) => {
+    const on = i === hoverHub, r = on ? 15 : 9 + 2 * Math.sin(t * 2 + i);
+    c.strokeStyle = T.dark ? T.hi : T.line; c.globalAlpha = on ? 1 : 0.55; c.lineWidth = on ? 1.2 : 0.8;
+    c.beginPath(); c.arc(h.x - 6, h.y, r, 0, TAU); c.stroke();
+    if (on) { c.beginPath(); c.moveTo(h.x - 30, h.y); c.lineTo(h.x - 22, h.y); c.moveTo(h.x - 6, h.y - 24); c.lineTo(h.x - 6, h.y - 16); c.moveTo(h.x - 6, h.y + 16); c.lineTo(h.x - 6, h.y + 24); c.stroke(); }
+  });
+  c.globalAlpha = 1;
+}
+
+/* --- 扫光：真实模式下每来一批新事件扫一次，不再是固定周期 --- */
+function drawBeam(c, t){
+  const {cx, cy, R1} = G, w = 0.24, tv = visAng(R1, 40);
+  let a;
+  if (LIVE) {
+    const age = t - beamAt;
+    if (age < 0 || age > 0.95) return;
+    a = wrapPI(-Math.PI * 0.75 + age * 4.4);
+  } else {
+    a = wrapPI(t * 0.85);
+  }
+  if (a < -tv || a - w > tv) return;
+  const far = W * 2, col = T.dark ? T.hot : T.line;
+  c.save();
+  c.beginPath(); c.moveTo(cx + Math.cos(a - w) * R1, cy + Math.sin(a - w) * R1);
+  c.arc(cx, cy, far, a - w, a); c.arc(cx, cy, R1, a, a - w, true); c.closePath();
+  if (c.createConicGradient) {
+    const g = c.createConicGradient(a - w, cx, cy), f = w / TAU;
+    g.addColorStop(0, rgba(col, 0)); g.addColorStop(f * 0.97, rgba(col, T.dark ? 0.2 : 0.07)); g.addColorStop(f, rgba(col, 0)); g.addColorStop(1, rgba(col, 0));
+    c.fillStyle = g;
+  } else { c.fillStyle = rgba(col, T.dark ? 0.08 : 0.03); }
+  if (T.dark) c.globalCompositeOperation = 'lighter';
+  c.fill();
+  c.beginPath(); c.moveTo(cx + Math.cos(a) * R1, cy + Math.sin(a) * R1); c.lineTo(cx + Math.cos(a) * far, cy + Math.sin(a) * far);
+  c.strokeStyle = col; c.globalAlpha = T.dark ? 0.55 : 0.35; c.lineWidth = 1; c.stroke();
+  c.restore();
+}
+
+/* --- 齿环：转速跟着真实事件速率走 --- */
+function drawGears(c, t){
+  const {cx, cy, R1, R2} = G;
+  const ro = -t * 2.6, r0 = R2 + 5, r1 = R2 + 12, n = Math.round(TAU * R2 / 9), st = TAU / n, tv = visAng(R2, 30);
+  const p = new Path2D();
+  for (let k = Math.ceil((-tv - ro) / st), e = Math.floor((tv - ro) / st); k <= e; k++) {
+    const m = ((k % 7) + 7) % 7; if (m === 3 || m === 6) continue;
+    const a = k * st + ro, a2 = a + st * (m === 0 ? 0.85 : 0.45);
+    p.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); p.arc(cx, cy, r0, a, a2); p.arc(cx, cy, r1, a2, a, true); p.closePath();
+  }
+  const ri = R1 - 9, si = TAU / Math.round(TAU * R1 / 7), ti = visAng(R1, 30), roi = -t * 1.6;
+  const q = new Path2D();
+  for (let k = Math.ceil((-ti - roi) / si), e = Math.floor((ti - roi) / si); k <= e; k++) {
+    if (((k % 9) + 9) % 9 > 5) continue;
+    const a = k * si + roi; q.moveTo(cx + Math.cos(a) * ri, cy + Math.sin(a) * ri); q.arc(cx, cy, ri, a, a + si * 0.55);
+  }
+  if (T.dark) {
+    c.globalCompositeOperation = 'lighter';
+    c.fillStyle = T.hot; c.globalAlpha = 0.85; c.fill(p);
+    c.strokeStyle = T.hot; c.globalAlpha = 0.18; c.lineWidth = 6; c.stroke(p);
+    c.globalCompositeOperation = 'source-over';
+    c.strokeStyle = T.line; c.globalAlpha = 0.8; c.lineWidth = 2; c.stroke(q);
+  } else {
+    c.fillStyle = T.line; c.globalAlpha = 0.8; c.fill(p);
+    c.strokeStyle = T.line; c.globalAlpha = 0.6; c.lineWidth = 2; c.stroke(q);
+  }
+  c.globalAlpha = 1;
+}
+
+/* --- 三个汇聚节点的标签：定时切换工作流，切换时乱码跳动 --- */
+const GLYPH = '01#%&*+=/<>▚▞▙▟░▒';
+function switchHub(){
+  const i = hubTurn++ % hubWf.length;
+  const busy = [...new Set(tasks.filter(t => t.state === 'run').map(t => t.wf))].filter(w => !hubWf.includes(w));
+  const pool = busy.length ? busy : wfs.map(w => w.i).filter(w => !hubWf.includes(w));
+  if (pool.length) hubWf[i] = pool[(Math.random() * pool.length) | 0];
+  // 换了工作区就要立刻重算这个节点显示的智能体数，等下一轮询才更新会显示别的区的数
+  hubCounts[i] = agents.filter(a => a.wf === hubWf[i]).length;
+  hubCh[i] = simT; needs = true;
+  const h = hubs[i];
+  if (h) for (let k = 0; k < 10; k++) pulses[(Math.random() * pulses.length) | 0] = {q: h.curves[(Math.random() * h.curves.length) | 0], u: Math.random() * 0.3, v: 0.5 + Math.random() * 0.45};
+  if (hoverHub === i) showTip();
+}
+function drawHubLabels(c, t){
+  const fs = G.narrow ? 6.5 : 9;
+  c.textAlign = 'right'; c.textBaseline = 'middle';
+  hubs.forEach((h, i) => {
+    const w = wfs[hubWf[i]];
+    if (!w) return;   // 没有对应工作区就不画，绝不回退到第 1 个（那会画出重复节点）
+    const full = `${w.id} — ${w.name}`, e = t - hubCh[i];
+    let s = full;
+    if (e >= 0 && e < 0.6) {
+      const n = Math.floor(e / 0.6 * full.length);
+      s = full.slice(0, n) + Array.from(full.slice(n), ch => ch === ' ' ? ' ' : GLYPH[(Math.random() * GLYPH.length) | 0]).join('');
+    }
+    const fresh = e >= 0 && e < 1.1, jump = e >= 0 && e < 0.4 ? -6 * Math.sin(e / 0.4 * Math.PI) : 0;
+    const x = h.x - 30, y = h.y - 16 + jump;
+    c.font = `700 ${fs}px ${FONT}`;
+    const tw = c.measureText(s).width;
+    c.globalAlpha = 1; c.fillStyle = fresh ? T.text : T.bg; c.fillRect(x - tw - 6, y - fs * 0.8, tw + 12, fs * 1.6);
+    if (!fresh) { c.strokeStyle = T.text; c.globalAlpha = 0.5; c.lineWidth = 0.8; c.strokeRect(x - tw - 6 + 0.5, y - fs * 0.8 + 0.5, tw + 11, fs * 1.6 - 1); c.globalAlpha = 1; }
+    c.fillStyle = fresh ? T.band : T.text; c.fillText(s, x, y);
+    const sub = `${hubCounts[i] || 0} agents · 成功率 ${rateText(w)}`;
+    c.font = `500 ${fs - 1.5}px ${FONT}`;
+    const sw = c.measureText(sub).width;
+    c.fillStyle = T.bg; c.fillRect(x - sw - 4, y + fs * 0.85, sw + 8, fs * 1.25);
+    c.fillStyle = T.dim; c.fillText(sub, x, y + fs * 1.45);
+    if (e >= 0 && e < 0.7) {
+      const k = e / 0.7;
+      c.strokeStyle = T.dark ? T.hot : T.line; c.globalAlpha = 1 - k; c.lineWidth = 1.4;
+      c.beginPath(); c.arc(h.x - 6, h.y, 10 + k * 70, 0, TAU); c.stroke(); c.globalAlpha = 1;
+    }
+  });
+  c.textAlign = 'left';
+}
+
+let nextGlitch = 6, glitchUntil = 0;
+function drawStage(t, dt){
+  const c = sctx;
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+  c.fillStyle = T.bg; c.fillRect(0, 0, sc.width, sc.height);
+  c.drawImage(layThreads, 0, 0); c.drawImage(layRing, 0, 0);
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  gearPhase += dt * SPIN * (1.0 + Math.min(4, rateSmooth));
+  drawWheelStreaks(c, t, dt); drawBeam(c, t); drawGears(c, gearPhase); drawWheelMarks(c, t); drawPulses(c, dt); drawAgentGraph(c, t); drawBlocks(c, t); drawHubMarks(c, t); drawHubLabels(c, t);
+  if (T.dark && !reduce && dt > 0) {
+    if (t > nextGlitch) { glitchUntil = t + 0.1; nextGlitch = t + 5 + Math.random() * 5; }
+    if (t < glitchUntil) {
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      for (let k = 0; k < 3; k++) { const y = Math.random() * sc.height, h = (4 + Math.random() * 24) * DPR, dx = (Math.random() - 0.5) * 36 * DPR; c.drawImage(sc, 0, y, sc.width, h, dx, y, sc.width, h); }
+    }
+  }
+}
+
+function showTip(){
+  const h = hubs[hoverHub]; if (!h) return;
+  const wi = hubWf[hoverHub], w = wfs[wi]; if (!w) return;
+    const live = tasks.filter(t => t.wf === wi && t.state === 'run').length;
+  tip.innerHTML = `<b>${esc(w.id)}</b>${esc(w.full || w.name)}<span>${hubCounts[hoverHub] || 0} 个智能体 · 运行中 ${live} · 成功率 ${rateText(w)}</span>`;
+  tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.max(8, Math.min(W - tw - 8, h.x + 14)) + 'px';
+  tip.style.top = Math.max(8, Math.min(H - th - 8, h.y + 16)) + 'px';
+}
+function onPointer(e){
+  if (!G) return;
+  const r = sc.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  let h = -1; hubs.forEach((hb, i) => { if (Math.hypot(x - (hb.x - 6), y - hb.y) < 34) h = i; });
+  if (h !== hoverHub) { hoverHub = h; needs = true; }
+  if (h >= 0) showTip(); else tip.hidden = true;
+}
+sc.addEventListener('pointermove', onPointer);
+sc.addEventListener('pointerdown', e => {
+  // S03：先命中智能体节点（小半径），再走工作区悬浮逻辑
+  const r = sc.getBoundingClientRect();
+  const hit = agentAt(e.clientX - r.left, e.clientY - r.top);
+  if (hit) { openDetail('agent', hit); return; }
+  onPointer(e);
+});
+sc.addEventListener('pointerleave', () => { hoverHub = -1; tip.hidden = true; needs = true; });
+
+/* ================= 6. 粒子求解器 =================
+   一个粒子 = 一条真实事件。粒子由事件生成、按寿命消失；流场只是把它们的运动画得好看。
+   没有新事件时，回放最近 200 条（面板上会标「回放」），保证画面不空、且内容依然是真的。 */
+const pc = $('#pc'), pctx = pc.getContext('2d');
+let PW = 1, PH = 1, mode = 'advect', maxU = 0;
+const parts = [], vort = [];
+/* 粒子按动作上色：比例来自后端统计的真实 verb 分布 */
+let verbMix = [1, 1, 1, 1];
+
+const EVT_RING_MAX = 200;
+const evtRing = [];              // 最近 200 条真实事件
+const evtSeen = new Set();       // 按 seq 去重，避免重复轮询重复生成
+let lastLiveAt = 0;              // 上次收到真实事件的时刻
+let replayOn = false, replayIdx = 0;
+let spawned = 0, ambientAt = 0;
+let unattributed = 0;   // 无法解析工作区/编号的事件数：不画进任何泳道，单独计数
+let particleSteps = 0, lastDrawn = 0;   // 真正执行过多少次绘制、上次画了多少粒子
+let rightMoves = 0;   // 粒子实际向右移动的次数（验证「流向」是真的）
+let leftMoves = 0;    // 回流粒子的向左移动次数
+let backflow = 0;     // 生成过多少个回流粒子（失败的调用）
+let lastEmitted = null;   // 上一条被转成粒子的事件，用来判断「前后两条有没有关系」
+let restarts = 0;     // 检测到后端重启（epoch 变化）的次数
+const PART_MAX = 1800;
+
+function pickVerb(){
+  const tot = verbMix[0] + verbMix[1] + verbMix[2] + verbMix[3];
+  let r = Math.random() * (tot || 1);
+  for (let i = 0; i < 4; i++) { r -= verbMix[i]; if (r <= 0) return i; }
+  return 0;
+}
+
+/** 泳道数：最多 4 条。超过 4 个工作区时，最后一条是「合并泳道」，标签带 + 号，不假装是一个工作区。 */
+const LANE_MAX = 4;
+function laneCount(){ return Math.max(1, Math.min(LANE_MAX, wfs.length || 1)); }
+
+/** 泳道 = 工作区。事件的稳定身份是 workspace key（编号会被回收、排序会变）。
+ *  #6 三态归属，禁止「有稳定身份但未匹配」时回退编号：
+ *    ① workspace === undefined：真正旧协议缺字段，才允许有限编号兼容；
+ *    ② workspace 存在但为 null/空串：明确写了「没有工作区」→ 未归属(-1)；
+ *    ③ workspace 存在且已知：按稳定 key 归属（编号冲突一律以 key 为准）；
+ *       字段存在但未知/未匹配 → 未归属(-1)，不能落到当前同编号的工作区。
+ *  首次接收、空闲回放、重排、删除/重新出现都走这一个函数。 */
+function laneOfAgent(code, workspace){
+  if (!wfs.length) return -1;
+  const n = laneCount(), c = String(code == null ? '' : code);
+  const a = c ? agents.find(x => x.code === c) : null;
+  const laneOfWf = i => Math.max(0, Math.min(n - 1, i | 0));
+  const codeLane = a ? laneOfWf(a.wf) : -1;
+  if (workspace === undefined) return codeLane;   // 只有字段真的不存在才按上墙编号兜底
+  if (workspace === null || workspace === '') return -1;
+  const key = String(workspace);
+  const wi = wfs.findIndex(w => String(w.key || '') === key);
+  return wi < 0 ? -1 : laneOfWf(wi);
+}
+/** 事件 → 泳道：agent 是显示编号，workspace 是稳定工作区 key。
+ *  注意不能把缺失的 workspace 改写成空串 —— 那会把「旧协议无字段」和「明确空值」混为一谈。 */
+function laneOfEvent(ev){
+  if (!ev || typeof ev !== 'object') return -1;
+  return laneOfAgent(ev.agent == null ? '' : String(ev.agent), ev.workspace);
+}
+
+/** 泳道标签：合并泳道加 "+"，让"这里不止一个工作区"一眼可见 */
+function laneLabel(i, n){
+  const wf = wfs[i];
+  if (!wf) return '';
+  return (i === n - 1 && wfs.length > n) ? String(wf.id) + '+' : String(wf.id);
+}
+
+/** 每个智能体在泳道里的「漩涡中心」横向位置（稳定，不随时间跳） */
+function agentAnchorX(code){
+  let h = 0;
+  const s = String(code || '');
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return 0.30 + ((h >>> 0) % 1000) / 1000 * 0.40;   // 0.30 ~ 0.70
+}
+
+/** 由一条真实事件生成粒子。
+ *  正常 → 从左到右顺流；失败（ok:false）→ 回流（从右往左，从左边流出）。 */
+function spawnFromEvent(ev, fromReplay){
+  const code = String(ev.agent || '');
+  const lane = laneOfEvent(ev);
+  // 未归属事件不画进任何泳道（尤其不能默认落进 W01，假装成第一个工作区）
+  if (lane < 0) { unattributed++; return; }
+  const laneN = laneCount();
+  const laneY = (lane + 0.5) / laneN;
+  const back = ev.ok === false;   // 出问题的调用 → 倒着流
+  // 「有关系」= 同一个智能体的连续两条事件：它们绕同一个锚点转，形成漩涡
+  const related = !back && !!lastEmitted && String(lastEmitted.agent || '') === code && code !== ''
+    && Math.abs((Number(ev.seq) || 0) - (Number(lastEmitted.seq) || 0)) <= 2;
+  lastEmitted = ev;
+  // 归一化坐标：画布尺寸晚到、或者窗口缩放，都不会把粒子挤成一团
+  // 实时事件：从左边缘进入（它确实是新发生的）；回放：直接铺在泳道里（历史事件，本来就在途中）
+  // 回流粒子从右侧进入，往左走
+  const u = back ? (fromReplay ? Math.random() : 0.92 + Math.random() * 0.06)
+    : (fromReplay ? Math.random() : 0.015 + Math.random() * 0.05);
+  const w = Math.max(0.04, Math.min(0.96, laneY + (Math.random() - 0.5) * (0.72 / laneN)));
+  const vi = VERBS.indexOf(ev.verb);
+  parts.push({
+    x: null, y: null, u, w, v: vi < 0 ? 0 : vi, lane, code,
+    msg: ev.kind === 'msg',
+    back,
+    orbit: related,
+    anchor: agentAnchorX(code),
+    age: Math.random() * 40,   // 打散初始年龄，别让它们同时登场又同时消失
+    life: 900 + Math.random() * 600,   // 走完一条泳道的时间（到边就消失，见 stepP）
+    replay: !!fromReplay,
+  });
+  spawned++;
+  if (back) backflow++;
+  if (parts.length > PART_MAX) parts.splice(0, parts.length - PART_MAX);
+  panelsNeed = true;   // 暂停或"减少动效"时也要把新粒子画出来
+}
+
+/** 没有事件可放时的一点点中性背景（只在完全没有数据时用，颜色是灰的、不代表任何动作） */
+function spawnAmbient(){
+  parts.push({
+    x: null, y: null, u: Math.random(), w: Math.random(), v: -1, msg: false,
+    age: 0, life: 90 + Math.random() * 140, ambient: true,
+  });
+  if (parts.length > PART_MAX) parts.splice(0, parts.length - PART_MAX);
+}
+
+/** 收到真实事件：进环形缓冲 + 立即生成粒子 */
+function onLiveEvent(ev){
+  const seq = Number(ev.seq) || 0;
+  if (seq && evtSeen.has(seq)) return;
+  // 未归属事件不进回放缓冲：否则空闲回放时会反复猜工作区（可能正好被编号回收骗到 W01）
+  if (laneOfEvent(ev) < 0) { unattributed++; return; }
+  if (seq) {
+    evtSeen.add(seq);
+    if (evtSeen.size > 4000) evtSeen.clear();
+  }
+  if (evtRing.length >= EVT_RING_MAX) evtRing.shift();
+  evtRing.push(ev);
+  lastLiveAt = performance.now();
+  replayOn = false;
+  spawnFromEvent(ev, false);
+}
+
+/** 空闲回放：没有新事件超过 3 秒，就按约 8 条/秒循环回放最近 200 条 */
+function particleTick(){
+  if (paused || reduce) return;   // 减少动效：不做空闲回放/背景粒子，但数据事件仍会生成粒子并渲染
+  const now = performance.now();
+  if (now - lastLiveAt < 3000) return;
+  if (!evtRing.length) {
+    // 完全没数据（比如演示模式）：撒一点灰色背景，并明确它不是动作
+    if (parts.length < 40 && now - ambientAt > 200) { ambientAt = now; spawnAmbient(); }
+    return;
+  }
+  replayOn = true;
+  if (now - (particleTick._at || 0) < 12) return;   // 约 160 条/秒（密度翻倍）
+  particleTick._at = now;
+  spawnFromEvent(evtRing[replayIdx % evtRing.length], true);
+  replayIdx++;
+}
+
+function clearParticles(){ parts.length = 0; vort.length = 0; replayIdx = 0; }
+
+/** 后端重启（epoch 变了）：粒子的去重集合和回放缓冲都要清，否则新事件会被旧 seq 判成重复而丢掉 */
+function resetParticlesOnRestart(){
+  restarts++;
+  parts.length = 0;
+  vort.length = 0;
+  evtRing.length = 0;
+  evtSeen.clear();
+  replayIdx = 0;
+  replayOn = false;
+  lastEmitted = null;
+  lastLiveAt = 0;
+  panelsNeed = true;
+}
+
+/** 画布尺寸变化时按比例缩放已有粒子，否则它们会被当成「流出边界」批量删掉。
+ *  注意：只缩放**已经算成像素**的 x/y；u/w 是归一化坐标（0..1），本身与画布尺寸无关，
+ *  不能再乘一次比例 —— 否则还没首次绘制的粒子会在 p.x = u * PW 时被二次缩放，位置整体跑偏。 */
+function rescaleParticles(oldPW, oldPH){
+  if (!(oldPW > 1 && oldPH > 1) || !(PW > 1 && PH > 1)) return;
+  const kx = PW / oldPW, ky = PH / oldPH;
+  for (const p of parts) {
+    if (p.x != null) { p.x *= kx; p.y *= ky; }
+  }
+}
+
+function stepP(dt, tt){
+  const c = pctx, s = 60 * dt * (0.55 + Math.min(2.5, rateSmooth));   // 粒子速度 = 真实事件速率
+  c.globalAlpha = 1; c.fillStyle = T.panel; c.fillRect(0, 0, PW, PH);
+  const laneN = laneCount();
+
+  /* 泳道背景：每条线 = 一个工作区，左边标 W01/W02…（超过 4 个时最后一条标 W04+）。这是"流向"的坐标系。 */
+  if (laneN > 1) {
+    c.strokeStyle = T.hair || T.mute || T.cell; c.globalAlpha = 0.45; c.lineWidth = 0.6;
+    for (let i = 1; i < laneN; i++) {
+      const y = (i / laneN) * PH;
+      c.beginPath(); c.moveTo(0, y); c.lineTo(PW, y); c.stroke();
+    }
+    c.globalAlpha = 0.5; c.fillStyle = T.mute || T.cell;
+    c.font = '8px ui-monospace, monospace'; c.textAlign = 'left'; c.textBaseline = 'middle';
+    for (let i = 0; i < laneN; i++) {
+      const label = laneLabel(i, laneN);
+      if (label) c.fillText(label, 3, (i + 0.5) / laneN * PH);
+    }
+  }
+
+  const pv = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+  const ph = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+  const pa = new Path2D();   // 中性背景粒子（没有数据时才有）
+  let mu = 0;
+  for (let k = parts.length - 1; k >= 0; k--) {
+    const p = parts[k];
+    if (p.x == null) { p.x = p.u * PW; p.y = p.w * PH; }
+    /* 有意义的流向：沿所属工作区的泳道，从左（任务）向右（产出）流；
+       竖向只是往泳道中线收拢 + 轻微摆动，不再是随机噪声场。 */
+    const laneY = ((p.lane || 0) + 0.5) / laneN * PH;
+    const wobble = Math.sin(tt * 0.9 + p.y * 0.05) * 0.20;
+    let vx, vy;
+    if (p.back) {
+      /* 出问题 → 回流：从右往左走，最后从左边流出去 */
+      vx = -1.15; vy = (laneY - p.y) * 0.008 + wobble * 0.5;
+    } else if (p.orbit) {
+      /* 有关系的调用 → 绕它自己的锚点转成漩涡。
+         切向力按距离开方衰减并封顶，绝对不能让粒子被甩到上下边缘 ——
+         否则会贴着边"沉积"，看起来就是粒子往下沉。 */
+      const ax = p.anchor * PW, ay = laneY;
+      const dx = p.x - ax, dy = p.y - ay;
+      const d = Math.hypot(dx, dy) || 1;
+      const edge = Math.min(1, Math.abs(p.y - laneY) / Math.max(20, PH * 0.35));   // 越靠边越弱
+      const k = Math.min(1, 90 / d) * 0.50 * (1 - edge * 0.85);
+      vx = 0.55 - (dy / d) * k;
+      vy = (laneY - p.y) * 0.008 + (dx / d) * k;
+    } else {
+      /* 普通工具调用 → 平滑地向右游 */
+      vx = 1.0; vy = (laneY - p.y) * 0.008 + wobble;
+    }
+    if (mode === 'project') { vx = Math.abs(vx) * 1.4; vy *= 0.3; }   // PROJECT：更平直的输送带
+    // 点击加的涡流仍然有效，但只是局部扰动，不改主方向
+    for (const v of vort) {
+      const dx = p.x - v.x, dy = p.y - v.y, d2 = dx * dx + dy * dy + 25, d = Math.sqrt(d2);
+      const f = v.life * 1.9 * Math.exp(-d2 / 1600);
+      vx += -dy / d * f; vy += dx / d * f;
+    }
+    // 主方向不许被扰动带反：正常的只能往右，回流的只能往左
+    if (p.back) { if (vx > -0.35) vx = -0.35; } else if (vx < 0.35) vx = 0.35;
+    const u = Math.hypot(vx, vy); if (u > mu) mu = u;
+    const x0 = p.x;
+    p.x += vx * s; p.y += vy * s; p.age += s;
+    if (p.x > x0 + 0.01) rightMoves++;
+    if (p.x < x0 - 0.01) leftMoves++;
+    // 流出边界 = 这条事件"走完了"（正常从右边流出，回流从左边流出）；或者寿命到
+    if ((p.back ? p.x < -8 : p.x > PW + 8) || p.age > p.life) { parts.splice(k, 1); continue; }
+    /*
+     * 边界：不是"贴住"而是"弹回来"。
+     * 原来直接 p.y = 2 / PH-2 会把粒子钉在上下沿，看起来像不断往下沉、堆在底边。
+     * 这里让 y 停在边界内侧，并把速度反向，下一帧自然往泳道中线走。
+     */
+    if (p.y < 3) { p.y = 3 + (3 - p.y) * 0.5; p.y = Math.min(p.y, PH - 3); }
+    else if (p.y > PH - 3) { p.y = PH - 3 - (p.y - (PH - 3)) * 0.5; p.y = Math.max(p.y, 3); }
+    const l = (p.msg ? 2.6 : 3.8) + Math.min(7, u * 5), ux = vx / (u || 1), uy = vy / (u || 1);
+    const path = p.ambient ? pa : (p.msg ? ph : pv)[p.v || 0];
+    path.moveTo(p.x - ux * l / 2, p.y - uy * l / 2); path.lineTo(p.x + ux * l / 2, p.y + uy * l / 2);
+  }
+  particleSteps++; lastDrawn = parts.length;
+  if (dt > 0 || !maxU) maxU = mu;
+  c.lineCap = 'butt';
+  for (let i = 0; i < 4; i++) {
+    const col = (T.v && T.v[i]) || T.cell;
+    c.strokeStyle = col; c.globalAlpha = 0.9; c.lineWidth = 1.5; c.stroke(pv[i]);
+    c.strokeStyle = col; c.globalAlpha = 1; c.lineWidth = 2.3; c.stroke(ph[i]);
+  }
+  c.strokeStyle = T.mute || T.cell; c.globalAlpha = 0.35; c.lineWidth = 1.4; c.stroke(pa);
+  for (const v of vort) { v.life -= dt / 6; if (v.life > 0) { c.strokeStyle = T.ink; c.globalAlpha = 0.6 * v.life; c.lineWidth = 0.8; c.beginPath(); c.arc(v.x, v.y, 6 + (1 - v.life) * 20, 0, TAU); c.stroke(); } }
+  for (let i = vort.length - 1; i >= 0; i--) if (vort[i].life <= 0) vort.splice(i, 1);
+  c.globalAlpha = 1;
+}
+function addVortex(x, y){ vort.push({x, y, life: 1}); if (vort.length > 4) vort.shift(); }
+pc.addEventListener('pointerdown', e => { const r = pc.getBoundingClientRect(); addVortex(e.clientX - r.left, e.clientY - r.top); panelsNeed = true; });
+pc.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addVortex(PW * (0.2 + Math.random() * 0.6), PH * (0.2 + Math.random() * 0.6)); } });
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.m === 'rerun') { clearParticles(); replayIdx = 0; panelsNeed = true; b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 350); return; }
+  mode = b.dataset.m; panelsNeed = true;
+  document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x.dataset.m === mode));
+}));
+
+/* ================= 7. 主循环与控制 ================= */
+let simT = 0, last = performance.now(), paused = false, pausedAt = 0;
+/* 只有用户主动点「暂停」才冻结数据轮询；并给出明确提示（系统减少动效不走这里）。
+   暂停/恢复都会推进 poll.gen：已经在路上的请求返回时也不能改冻结画面。 */
+function setPaused(p){
+  const was = paused, changed = p !== was;
+  paused = p;
+  /* 只有真正的暂停/恢复切换才推进代际：启动时的 setPaused(false) 是无操作，
+     不能把首轮拉取当成「恢复后的旧响应」丢掉。 */
+  if (changed) poll.gen++;
+  pauseBtn.textContent = p ? '继续' : '暂停';
+  pauseBtn.setAttribute('aria-pressed', String(p));
+  if (changed && p) {
+    pausedAt = Date.now();
+    if (pauseTag) { pauseTag.hidden = false; pauseTag.textContent = '暂停中 · 数据冻结'; }
+  } else if (changed && !p && pausedAt) {
+    // 恢复时说明这次冻结了多久，让「暂停期间没数据」有明确解释
+    const freezeMs = Date.now() - pausedAt; pausedAt = 0;
+    if (pauseTag) {
+      pauseTag.hidden = false;
+      pauseTag.textContent = `已恢复 · 冻结 ${fmtAgo(freezeMs)}`;
+      setTimeout(() => { if (!paused && pauseTag) pauseTag.hidden = true; }, 1000);
+    }
+  } else if (changed && pauseTag) pauseTag.hidden = true;
+  document.body.dataset.paused = p ? '1' : '0';
+  needs = true; panelsNeed = true;
+}
+pauseBtn.addEventListener('click', () => setPaused(!paused));
+/* S06：大字模式（远距离阅读）。只放大字号、不改行高，避免破坏任务流锚点计算。 */
+let bigText = false;
+const bigTextBtn = $('#bigText');
+function toggleBigText(on){
+  bigText = on == null ? !bigText : !!on;
+  document.body.dataset.bigtext = bigText ? '1' : '0';
+  if (bigTextBtn) {
+    bigTextBtn.textContent = bigText ? '标准' : '大字';
+    bigTextBtn.setAttribute('aria-pressed', String(bigText));
+  }
+}
+if (bigTextBtn) bigTextBtn.addEventListener('click', () => toggleBigText());
+/* S07：窄屏折叠/展开飞轮（桌面端按钮不可见，状态仍保留）。 */
+let stageVisible = true;
+const stageToggleBtn = $('#stageToggle');
+function toggleStage(on){
+  stageVisible = on == null ? !stageVisible : !!on;
+  document.body.dataset.stage = stageVisible ? 'on' : 'off';
+  if (stageToggleBtn) {
+    stageToggleBtn.textContent = stageVisible ? '收起飞轮' : '显示飞轮';
+    stageToggleBtn.setAttribute('aria-pressed', String(!stageVisible));
+  }
+}
+if (stageToggleBtn) stageToggleBtn.addEventListener('click', () => toggleStage());
+/* 切换数据源：改 URL 上的 ?source= 并整页重载，最小改动、不引入状态同步问题 */
+const srcSelEl = $('#srcSel');
+if (srcSelEl) srcSelEl.addEventListener('change', () => {
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set('source', srcSelEl.value);
+    location.href = u.toString();
+  } catch (e) { /* 忽略 */ }
+});
+/* 任务流滚动：滚到底恢复自动跟底，滚上去就停住并显示「↓ 最新」 */
+if (feedBoxEl) {
+  feedBoxEl.addEventListener('scroll', () => {
+    onFeedScroll();
+    if (feedJumpEl) {
+      feedJumpEl.hidden = feedFollow;
+      feedJumpEl.textContent = feedUnread > 0 ? `↓ 最新 (${feedUnread})` : '↓ 最新';
+    }
+  }, { passive: true });
+  // 鼠标滚轮：在面板里滚动时不要连带滚动整页
+  feedBoxEl.addEventListener('wheel', e => { e.stopPropagation(); }, { passive: true });
+}
+if (feedJumpEl) feedJumpEl.addEventListener('click', feedToBottom);
+/* S05：筛选控件（失败 / 来源 / 智能体）。筛选属于视图变化，切换后回到最新。 */
+if (feedFailEl) feedFailEl.addEventListener('click', () => setFeedFilter({failOnly: !feedFilter.failOnly}));
+if (feedSrcEl) feedSrcEl.addEventListener('change', () => setFeedFilter({src: feedSrcEl.value}));
+if (feedAgentEl) feedAgentEl.addEventListener('change', () => setFeedFilter({code: feedAgentEl.value}));
+
+themeBtn.addEventListener('click', () => { root.dataset.theme = isDark() ? 'light' : 'dark'; });
+document.addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); setPaused(!paused); } });
+function onTheme(){ readTheme(); stageDirty = true; panelsNeed = true; }
+new MutationObserver(onTheme).observe(root, {attributes: true, attributeFilter: ['data-theme']});
+darkMQ.addEventListener('change', onTheme);
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const real = Math.min(0.05, (now - last) / 1000); last = now;
+  // 减少动效 / 用户暂停都冻结画布动画；数据轮询与面板渲染不受影响
+  const dt = (paused || reduce) ? 0 : real; simT += dt;
+  try {
+    if (stageDirty) { layoutStage(); stageDirty = false; needs = true; }
+    if (dt > 0 || needs) { drawStage(simT, dt); needs = false; }
+    if (dt > 0 || panelsNeed) {
+      if (PW > 20) stepP(dt, simT);
+      panelsNeed = false;
+    }
+  } catch (err) { console.error(err); }
+}
+
+function hudTick(){
+  const cfl = maxU / 1.6, bad = cfl > 1;
+  $('#cfl').textContent = cfl.toFixed(2);
+  const st = $('#cflst'); st.textContent = bad ? 'OVER · 步长减半' : 'OK'; st.className = bad ? 'warn' : '';
+  // 顶栏：回放中要能一眼看出来
+  const rt = $('#replayTag'); if (rt) rt.hidden = !replayOn;
+  // 面板右上角：现在是「回放」还是「实时」，以及粒子数 / 事件数
+  const meta = $('#stepN');
+  if (meta) {
+    if (replayOn) meta.textContent = `回放 · 最近 ${evtRing.length} 条`;
+    else if (evtRing.length) meta.textContent = `${parts.length} 粒子 · ${rateSmooth.toFixed(1)}/s`;
+    else meta.textContent = '无事件';
+  }
+  renderScanHealth();   // 「最近成功 Ns 前」要随时间走，不能只在提交时更新
+}
+function clockTick(){ $('#clock').textContent = hms(new Date()); }
+let hiIdx = 1; const cells = [...document.querySelectorAll('.stat')];
+function cycleHi(){ cells.forEach((el, i) => el.classList.toggle('on', i === hiIdx)); hiIdx = (hiIdx + 1) % cells.length; }
+
+const ro = new ResizeObserver(entries => {
+  for (const e of entries) {
+    if (e.target === stage) stageDirty = true;
+    else if (e.target.id === 'pcBox') { const oldPW = PW, oldPH = PH; [PW, PH] = fitCv(pc, pctx); rescaleParticles(oldPW, oldPH); for (let k = 0; k < 4; k++) stepP(1 / 60, simT); }
+  }
+  renderFeed(); needs = true; panelsNeed = true;
+});
+[stage, $('#pcBox')].forEach(el => ro.observe(el));
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { stageDirty = true; panelsNeed = true; });
+
+/* 大屏/看板场景可以直接锁主题：index.html?theme=dark 或 ?theme=light */
+try {
+  const qp = new URLSearchParams(location.search || '').get('theme');
+  if (qp === 'dark' || qp === 'light') root.dataset.theme = qp;
+} catch (e) { /* 没有 location.search 就算了 */ }
+
+/* ---- 直接双击 index.html（file://）时：不展示演示数据，给明确指引 ---- */
+const FILEMODE = location.protocol === 'file:';
+if (FILEMODE) {
+  const hint = $('#fileHint'), stateEl = $('#fileHintState');
+  if (hint) hint.hidden = false;
+  setPaused(true);   // 别在后台空转跑演示动画
+  // 这里不做任何跨域请求（那会逼着后端开放 CORS）。服务起来后点按钮直接跳转即可。
+  if (stateEl) {
+    stateEl.textContent = '服务启动后，点下面的按钮打开实时大屏。';
+    stateEl.className = 'state';
+  }
+}
+
+readTheme();
+renderAll(); nextCodeSet();
+pull();   // 首帧先试真实数据；拉不到就继续用模拟引擎
+if (reduce) { cl = cset.lines.length - 1; cc = cset.lines[cl].length; }
+renderCode(); clockTick(); cycleHi();
+/* 减少动效只关动画，绝不碰数据轮询；用户暂停才调用 setPaused(true)（file:// 提示层除外） */
+document.body.dataset.motion = reduce ? 'reduce' : 'full';
+if (!FILEMODE) setPaused(false);
+toggleBigText(false);   // 大字模式默认关闭，但保留 body[data-bigtext] 状态供 CSS/测试使用
+toggleStage(true);      // 飞轮默认展开；窄屏时排在面板之后，可折叠为次要区域
+/* 减少动效与冻结数据是两个独立状态：前者只在标题旁标注，不改变轮询 */
+if (motionTag) { motionTag.textContent = '减少动效 · 数据仍实时'; motionTag.hidden = !reduce; }
+let lastTryAt = 0;
+setInterval(() => {
+  if (paused) return;
+  if (LIVE) { pull(); return; }
+  // 演示模式：照常跑模拟数据，同时每 5 秒再试一次后端（服务晚启动也能自己接上）
+  step();
+  const now = Date.now();
+  if (now - lastTryAt > 5000) { lastTryAt = now; pull(); }
+}, CONFIG.pollMs || 900);
+setInterval(() => { if (!paused) hudTick(); }, 300);
+setInterval(clockTick, 1000);
+/* 暂停期间把「已冻结多久」每秒刷新一次，避免只显示静态的 0s */
+setInterval(() => {
+  if (paused && pauseTag) pauseTag.textContent = `暂停中 · 数据冻结 ${fmtAgo(Date.now() - pausedAt)}`;
+}, 1000);
+setInterval(() => { if (!paused && !reduce) cycleHi(); }, 4500);
+setInterval(() => { if (!paused) switchHub(); }, 2400);   // 真实模式也要轮换（工作区 > 5 时才有意义）
+setInterval(() => { if (!paused) typeTick(); }, 34);
+setInterval(particleTick, 12);   // 空闲回放 / 无数据时的中性背景
+setInterval(() => { if (!paused && !reduce && PW > 1) addVortex(PW * (0.2 + Math.random() * 0.6), PH * (0.2 + Math.random() * 0.6)); }, 9000);
+setTimeout(hudTick, 500);
+
+/* 只读调试钩子：测试和排查用，不改任何状态 */
+try {
+  window.__AGENT_OPS__ = {
+    get tasks() { return tasks; },
+    get agents() { return agents; },
+    get wfs() { return wfs; },
+    get overflow() { return overflow; },
+    // 任务预算省略计数（#10）：当前代表任务优先后的剩余容量
+    get tasksOmitted() { return {total: tasksOmitted, active: tasksOmittedActive, history: tasksOmittedHistory, current: currentOmitted}; },
+    get hubCounts() { return hubCounts; },
+    /* 调试/测试用：当前有几个汇聚节点、分别显示哪个工作区 */
+    switchHub,         // 供测试直接触发一次节点轮换
+    hubState: () => ({ wf: hubWf.slice(), turn: hubTurn, n: hubs.length }),   // 节点映射与轮换计数
+    hubFlow: () => hubs.map((h, i) => ({                                  // 流入效果的状态
+      id: (wfs[hubWf[i]] || {}).id || '',
+      running: hubRunning(i),
+      pulses: pulses.filter(x => x && x.h === i).length,
+      lines: h.curves.length,
+    })),
+    /* 右侧父子连线：线始终保留；flow=false 表示只有静态线、没有沿线流动的亮点。
+       判断依据 = 目标智能体当前有没有运行中的任务。 */
+    get agentLinks() { return agentLinks.map(l => ({ ...l })); },
+    agentFlow: () => agentLinks.map(l => ({ from: l.from, to: l.to, flow: agentRunning(l.to) })),
+    agentRunning: code => agentRunning(String(code || '')),
+    hubInfo: () => hubs.map((h, i) => {
+      const w = wfs[hubWf[i]];
+      return {
+        id: w ? String(w.id) : '',
+        name: w ? String(w.name) : '',
+        agents: hubCounts[i] || 0,             // 该节点显示的智能体数（轮换后必须立刻正确）
+        full: w ? String(w.full || w.name || '') : '',   // 完整目录名
+      };
+    }),
+    get live() { return LIVE; },
+    get feed() { return feed; },
+    get ringSig() { return ringSig; },
+    ringSignature,     // 给测试直接算签名
+    rateText,          // 成功率文案（百分比 + 分子/分母；无样本=暂无调用）
+    rateSummary,       // 成功率三分类汇总（达标 / 低于阈值 / 暂无调用）
+    rescaleParticles,  // 供测试验证「缩放时粒子按比例变换」
+    setPaused,         // 测试里冻结画面，便于对比缩放前后
+    toggleBigText,     // S06：大字模式（只放大字号，不改行高）
+    get bigText() { return bigText; },
+    toggleStage,       // S07：窄屏折叠/展开飞轮
+    agentRows,         // S07：两列布局行数（24/50/99 → 12/25/50）
+    scanAgeOf,         // R10：采集时间校验（纯函数，便于覆盖非法类型/未来时间）
+    /* S03：详情侧栏（列表按钮/画布命中/键盘/测试共用） */
+    openDetail, closeDetail, copyDetail, detailKey, detailState, agentAt,
+    get agentNodes() { return agentNodes.map(n => ({code: n.code, x: n.x, y: n.y, i: n.i})); },
+    /* S05：任务流锚点 / 筛选 / 未读（页面交互与测试共用同一套函数） */
+    feedToBottom,
+    feedScroll(top){
+      const box = feedBoxEl;
+      if (!box) return;
+      box.scrollTop = Math.max(0, Number(top) || 0);
+      onFeedScroll();
+      renderFeed();
+    },
+    setFeedFilter,
+    feedViewInfo(){
+      return {
+        follow: feedFollow,
+        anchorSeq: feedAnchor && feedAnchor.seq,
+        unread: feedUnread,
+        evicted: feedEvicted,
+        newest: feedNewestSeq(),
+        filter: {...feedFilter},
+        seqs: lastFeedRows.filter(Boolean).map(r => r.seq),
+        rendered: lastFeedRows.filter(Boolean).length,
+        jump: feedJumpEl ? String(feedJumpEl.textContent) : '',
+        jumpHidden: feedJumpEl ? !!feedJumpEl.hidden : true,
+      };
+    },
+    get epoch() { return poll.epoch; },
+    /* 动效 / 暂停 / 数据性质：三者是独立状态，测试要能分别核对 */
+    get reduced() { return reduce; },
+    get paused() { return paused; },
+    get dataKind() { return dataKind; },
+    health() {
+      return {cursor: poll.cursor, evFails: poll.evFails, evLastOk: poll.evLastOk,
+        evFirstFail: poll.evFirstFail, evInvalid: poll.evInvalid, evUnknown: poll.evUnknown,
+        fails: poll.fails, lastOk: poll.lastOk, live: LIVE, dataKind, epoch: poll.epoch,
+        // state 协议健康与 events 健康分开：错误 schema 不能伪装成实时成功
+        stateFails: poll.stateFails, stateLastOk: poll.stateLastOk,
+        stateFirstFail: poll.stateFirstFail, stateError: poll.stateError,
+        renderError: poll.renderError};
+    },
+    /* #8：state 外壳校验是纯函数，测试可以直接跑各种错误 schema */
+    validateState: d => { const reason = stateShellProblem(d); return {ok: !reason, reason: reason || ''}; },
+    /* #6：回放缓冲与接收入口也要能被核对（同一 laneOfEvent 规则） */
+    get evtRing() { return evtRing; },
+    onLiveEvent,
+    /* #7：工作区归属是纯函数，测试可直接用「12 上墙 / 100 工作区」样本核对 */
+    laneOfAgent, laneOfEvent,
+    /* #13：高亮器本身 + 走真实 renderCode 的渲染钩子（只写代码面板，不改数据） */
+    hl,
+    renderSample(lines, lang) {
+      if (!Array.isArray(lines) || !lines.length) return '';
+      const saved = {cset, cl, cc};
+      cset = {file: '—', start: 1, lang: lang || 'py', lines: lines.map(String)};
+      cl = cset.lines.length - 1;
+      cc = cset.lines[cl].length;
+      renderCode();
+      cset = saved.cset; cl = saved.cl; cc = saved.cc;
+      return codeEl.innerHTML;
+    },
+    /* 事件缺口：on=是否提示，kind=init（连接前历史已截断）/ live（连接期间丢失） */
+    get eventGap() { return { on: !!window.__eventGap, kind: window.__eventGapKind || '' }; },
+    /* 粒子面板：每个粒子都来自一条真实事件，这里可以核对 */
+    particleStats() {
+      return {
+        parts: parts.length,
+        spawned,
+        unattributed,
+        ring: evtRing.length,
+        replay: replayOn,
+        verbs: [...new Set(parts.filter(p => !p.ambient).map(p => VERBS[p.v] || ''))].filter(Boolean),
+        ambient: parts.filter(p => p.ambient).length,
+        steps: particleSteps,
+        drawn: lastDrawn,
+        size: [Math.round(PW), Math.round(PH)],
+        // 流向验证用：平均横向位置（0..1，越大越靠右）与泳道集合
+        rightMoves,
+        leftMoves,
+        backflow,
+        backs: parts.filter(p => p.back).length,
+        orbits: parts.filter(p => p.orbit).length,
+        avgY: (() => {
+          const live = parts.filter(p => !p.ambient);
+          if (!live.length || !PH) return 0;
+          return live.reduce((n, p) => n + ((p.y == null ? p.w * PH : p.y) / PH), 0) / live.length;
+        })(),
+        atEdge: (() => {
+          const live = parts.filter(p => !p.ambient);
+          if (!live.length || !PH) return 0;
+          const n = live.filter(p => { const y = p.y == null ? p.w * PH : p.y; return y < 4 || y > PH - 4; }).length;
+          return n / live.length;
+        })(),
+        maxX: (() => {
+          const live = parts.filter(p => !p.ambient);
+          if (!live.length || !PW) return 0;
+          return Math.max(...live.map(p => (p.x == null ? p.u * PW : p.x) / PW));
+        })(),
+        ringNames: evtRing.slice(-6).map(e => String(e.task_name || '')),
+        sampleU: parts.slice(0, 8).map(p => Number((p.u || 0).toFixed(4))),
+        ringSeqs: evtRing.slice(-6).map(e => Number(e.seq) || 0),
+        avgX: (() => {
+          const live = parts.filter(p => !p.ambient);
+          if (!live.length || !PW) return 0;
+          return live.reduce((n, p) => n + ((p.x == null ? p.u * PW : p.x) / PW), 0) / live.length;
+        })(),
+        lanes: [...new Set(parts.filter(p => !p.ambient).map(p => p.lane | 0))],
+        laneLabels: Array.from({ length: laneCount() }, (_, i) => laneLabel(i, laneCount())),
+        evtSeenSize: evtSeen.size,
+        restarts,
+      };
+    },
+  };
+} catch (e) { /* 没有 window 就算了 */ }
+
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
